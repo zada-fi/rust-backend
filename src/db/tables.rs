@@ -11,6 +11,8 @@ pub struct Token {
     pub address: String,
     pub symbol: String,
     pub decimals: u8,
+    pub coingecko_id: Option<String>,
+    pub usd_price: Option<Decimal>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -40,6 +42,15 @@ pub struct PoolInfo {
     pub(crate) total_rm_liq_count: i64,
 }
 
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct PriceCumulativeLast {
+    // pub(crate) id: i32,
+    pub(crate) pair_address: String,
+    pub(crate) price0_cumulative_last: Decimal,
+    pub(crate) price1_cumulative_last: Decimal,
+    pub(crate) block_timestamp_last: i32,
+}
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LastSyncBlock {
     pub block_number: i64,
@@ -48,6 +59,7 @@ pub struct LastSyncBlock {
 rbatis::crud!(Event {}, "events");
 rbatis::crud!(PoolInfo {}, "pool_info");
 rbatis::crud!(Token {}, "tokens");
+rbatis::crud!(PriceCumulativeLast {}, "price_cumulative_last");
 rbatis::crud!(LastSyncBlock {}, "last_sync_block");
 
 impl From<PairEvent> for Event {

@@ -3,6 +3,7 @@
 CREATE TABLE events (
      id serial NOT NULL,
      tx_hash text NOT NULL,
+     block_number
      event_type integer NOT NULL,-- add_liq/swap/rm_liq
      pair_address text NOT NULL,
      from_account text NOT NULL,
@@ -33,8 +34,19 @@ CREATE TABLE tokens (
    address text NOT NULL,
    symbol text NOT NULL,
    decimals integer NOT NULL,
+   coingecko_id text,
+   usd_price numeric,
    PRIMARY KEY (address)
 );
+
+-- store priceCumulativeLast
+CREATE TABLE price_cumulative_last {
+    id serial NOT NULL,
+    pair_address text NOT NULL,
+    price0_cumulative_last numeric NOT NULL,
+    price1_cumulative_last numeric NOT NULL,
+    block_timestamp_last integer NOT NULL,
+}
 -- last sync block number
 CREATE TABLE last_sync_block (
    block_number bigint NOT NULL,

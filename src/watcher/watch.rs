@@ -7,7 +7,7 @@ use web3::{
     Web3,
 };
 use crate::config::BackendConfig;
-use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token};
+use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast};
 use crate::db;
 use web3::types::{H160, H256, CallRequest, Bytes};
 use web3::transports::Http;
@@ -159,6 +159,36 @@ impl ChainWatcher {
         topics.insert(String::from("sync"),H256::from(sync_topic.0));
         topics
     }
+
+    pub async fn get_price_cumulative_last(&mut self, pair_address: H160) ->anyhow::Result<()> {
+        println!("get token is {:?}",token);
+        //get from chain
+        let pair_contract_abi = ethabi::Contract::load(PAIR_EVENTS.as_bytes()).unwrap();
+        let pair_contract = Contract::new(self.web3.eth(), pair_address, pair_contract_abi);
+        let price0_cumulative_last:Uint = pair_contract.query("price0CumulativeLast",(),None, Options::default(), None)
+            .await?;
+        let price1_cumulative_last:Uint = pair_contract.query("price1CumulativeLast",(),None, Options::default(), None)
+            .await?;
+        let (_reserve0,_reserve1,block_timestamp_last):(Uint,Uint,Uint) = pair_contract.query("getReserves",(),None, Options::default(), None)
+            .await?;
+        let new_price_cumulative = PriceCumulativeLast {
+            pair_address: hex::encode(pair_address),
+            price0_cumulative_last: Decimal::from_str(&price0_cumulative_last.to_string()).unwrap(),
+            price1_cumulative_last: Decimal::from_str(&price1_cumulative_last.to_string()).unwrap(),,
+            block_timestamp_last: block_timestamp_last.as_u32() as i32,
+        };
+        /// ignore the error
+        /// todo: should use another task to save in batches
+        db::save_price_cumulative_last(&mut self.db,new_price_cumulative).await?;
+        Ok(())
+    }
+
+    pub async fn get_all_pairs_price_cumulative_last(&mut self) ->anyhow::Result<()> {
+        for pair in self.all_pairs {
+            self.get_price_cumulative_last(pair).await?;
+        }
+        Ok(())
+    }
     pub async fn new(config:BackendConfig,db: rbatis::Rbatis) -> anyhow::Result<Self> {
         let transport = web3::transports::Http::new(&config.remote_web3_url).unwrap();
         let web3 = Web3::new(transport);
@@ -245,7 +275,7 @@ impl ChainWatcher {
             .topics(Some(topics), None, None, None)
             .build();
         let mut logs = self.web3.eth().logs(filter).await?;
-        println!("get logs {:?}",logs);
+        //println!("get logs {:?}",logs);
         let is_possible_to_sort_logs = logs.iter().all(|log| log.log_index.is_some());
         if is_possible_to_sort_logs {
             logs.sort_by_key(|log| {
@@ -284,7 +314,9 @@ impl ChainWatcher {
             start_block += sync_step;
 
         }
-        if last_synced_block != chain_block_number {
+        if last_synced_block == chain_block_number {
+            //get price_cumulative_last info here
+            self.get_all_pairs_price_cumulative_last().await?;
             db::upsert_last_sync_block(
                 &mut self.db,
                 LastSyncBlock { block_number: chain_block_number as i64 }
@@ -294,24 +326,17 @@ impl ChainWatcher {
     }
 
     pub async fn run_watcher_server(mut self) {
-        let mut handlers = Vec::new();
         println!("run_watcher_server");
-        handlers.push(Box::pin(
-            async move {
-                let mut tx_poll = tokio::time::interval(Duration::from_secs(1800));
-                loop {
-                    println!("loop");
-                    tx_poll.tick().await;
-                    if let Err(e) = self.run_sync_pair_created_events().await {
-                        println!("run_sync_pair_created_events error occurred {:?}", e);
-                        log::error!("run_sync_pair_created_events error occurred {:?}", e);
-                    }
-
-                }
+        let mut tx_poll = tokio::time::interval(Duration::from_secs(1800));
+        loop {
+            println!("loop");
+            tx_poll.tick().await;
+            if let Err(e) = self.run_sync_pair_created_events().await {
+                println!("run_sync_pair_created_events error occurred {:?}", e);
+                log::error!("run_sync_pair_created_events error occurred {:?}", e);
             }
-                .fuse(),
-        ));
-        futures::future::select_all(handlers).await;
+
+        }
     }
 }
 pub async fn run_watcher(config: BackendConfig, db: rbatis::Rbatis) -> JoinHandle<()> {

@@ -2,7 +2,7 @@ use crate::config::BackendConfig;
 use actix_web::{HttpServer, web};
 use std::net::SocketAddr;
 use actix_web::App;
-use crate::route::get_all_pools::get_all_pools;
+use crate::route::pools::get_all_pools;
 
 #[derive(Debug, Clone)]
 pub struct AppState {

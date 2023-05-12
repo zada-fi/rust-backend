@@ -1,7 +1,7 @@
 use crate::route::err::BackendError;
 use serde::Serialize;
 
-pub(crate) mod get_all_pools;
+pub(crate) mod pools;
 mod err;
 
 #[derive(Debug, Serialize, Clone)]

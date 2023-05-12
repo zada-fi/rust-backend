@@ -1,5 +1,5 @@
 use rbatis::Rbatis;
-use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token};
+use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast};
 use num::ToPrimitive;
 use std::collections::HashMap;
 use crate::watcher::event::PairEvent;
@@ -36,6 +36,7 @@ pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Resu
         .await?;
 
     for event in events {
+        println!("insert event tx hash {}",event.tx_hash);
         Event::insert(&mut tx, &event)
             .await?;
     }
@@ -66,6 +67,20 @@ pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Vec<Token>
         .query_decode("select * from tokens where address = ?",vec![rbs::to_value!(address)])
         .await?;
     Ok(tokens)
+}
+
+pub async fn get_eth_price(rb:&Rbatis) -> anyhow::Result<Decimal> {
+    let price: Decimal = rb
+        .query_decode("select usd_price from tokens where symbol = 'ETH'",vec![])
+        .await?;
+    Ok(price)
+}
+
+pub async fn get_token_price(rb:&Rbatis,token_address: String) -> anyhow::Result<Decimal> {
+    let price: Decimal = rb
+        .query_decode("select usd_price from tokens where address = ?",vec![rbs::to_value!(token_address)])
+        .await?;
+    Ok(price)
 }
 
 pub(crate) async fn save_token(rb: &mut Rbatis, token: Token) -> anyhow::Result<()> {
@@ -109,13 +124,16 @@ pub async fn store_pair_events(rb: &mut Rbatis,events: Vec<PairEvent>) -> anyhow
         }
     }
 
-    let mut tx = rb
-        .acquire_begin()
-        .await?;
-    for event in db_events {
-        Event::insert(&mut tx, &event)
-            .await?;
-    }
+    // let mut tx = rb
+    //     .acquire_begin()
+    //     .await?;
+    // for event in db_events {
+    //     Event::insert(&mut tx, &event)
+    //         .await?;
+    // }
+    println!("begin save events");
+    save_events(rb,db_events).await?;
+    println!("end save events");
     //update total count by event type
     for (pair_address,count) in added_events_count {
         match &column_name[..] {
@@ -138,6 +156,7 @@ pub async fn store_pair_events(rb: &mut Rbatis,events: Vec<PairEvent>) -> anyhow
 
         }
     }
+    println!("end update event count");
     //update pool reserves
     for (pair_address,(reserve_x,reserve_y)) in last_synced_reserves {
         let reserve_x_decimal = Decimal::from_str(&reserve_x.to_string()).unwrap();
@@ -148,8 +167,69 @@ pub async fn store_pair_events(rb: &mut Rbatis,events: Vec<PairEvent>) -> anyhow
                                       rbs::to_value!(hex::encode(pair_address))])
             .await?;
     }
-    tx.commit().await?;
+    println!("end update reserves");
+    // tx.commit().await?;
     Ok(())
+}
+
+pub(crate) async fn save_price_cumulative_last(rb: &mut Rbatis, price: PriceCumulativeLast) -> anyhow::Result<()> {
+    PriceCumulativeLast::insert(rb, &price)
+        .await?;
+    Ok(())
+}
+
+// pub(crate) async fn get_price_cumulative_last(rb: &mut Rbatis, price: PriceCumulativeLast) -> anyhow::Result<()> {
+//     let tokens: Vec<Token> = rb
+//         .query_decode("select * from tokens where address = ?",vec![rbs::to_value!(address)])
+//         .await?;
+//     Ok(tokens)
+// }
+pub(crate) async fn store_price(rb: &mut Rbatis, token_address:String,price: Decimal) -> anyhow::Result<()> {
+    rb.exec("update tokens set usd_price = ? where address = ?",
+            vec![rbs::to_value!(price), rbs::to_value!(token_address)])
+        .await?;
+    Ok(())
+}
+
+pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String) -> anyhow::Result<(Decimal,Decimal)> {
+    let lasest_price: Vec<PriceCumulativeLast> = rb
+        .query_decode("select * from price_cumulative_last where pair_address =  ? order by id desc limit 1",vec![rbs::to_value!(pair_address)])
+        .await?;
+    let mut base_price: Vec<PriceCumulativeLast> = rb
+        .query_decode("select * from price_cumulative_last where pair_address =  ?  \
+            and now() - block_timestamp_last > 3600 order by id asc limit 1",
+                      vec![rbs::to_value!(pair_address)])
+        .await?;
+    if lasest_price.is_empty() {
+        Ok((Decimal::from_str("0").unwrap_or_default(),Decimal::from_str("0").unwrap_or_default()))
+    }
+
+    if base_price.is_empty() {
+        base_price = rb
+            .query_decode("select * from price_cumulative_last order by id asc limit 1",
+                          vec![rbs::to_value!(pair_address)])
+            .await?;
+    }
+    let (delta_price0,delta_timestamp0,delta_price1,delta_timestamp1) = (
+        (lasest_price[0].price0_cumulative_last - base_price[0].price0_cumulative_last),
+        (lasest_price[0].block_timestamp_last - base_price[0].block_timestamp_last),
+        (lasest_price[1].price0_cumulative_last - base_price[1].price0_cumulative_last),
+        (lasest_price[1].block_timestamp_last - base_price[1].block_timestamp_last)
+    );
+    let price0 = if delta_timestamp0 == 0 {
+        lasest_price[0].price0_cumulative_last
+    } else {
+        delta_price0 / delta_timestamp0
+    };
+
+    let price1 = if delta_timestamp1 == 0 {
+        lasest_price[1].price1_cumulative_last
+    } else {
+        delta_price1 / delta_timestamp1
+    };
+
+    Ok((price0,price1))
+
 }
 
 #[cfg(test)]

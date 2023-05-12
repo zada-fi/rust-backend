@@ -14,6 +14,7 @@ pub mod watcher;
 pub mod server;
 pub mod db;
 pub mod route;
+pub mod token_price;
 
 /// make an Rbatis
 pub fn init_db(db_url:String,pool_size: usize) -> Rbatis {
@@ -36,7 +37,7 @@ async fn main() -> std::io::Result<()> {
         config:config.clone(),
         db: db.clone()
     };
-    server::run_server(app_state).await;
+    //server::run_server(app_state).await;
     let watcher_handlers = run_watcher(config,db).await;
 
     // handle ctrl+c
