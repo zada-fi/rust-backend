@@ -114,7 +114,9 @@ impl ChainWatcher {
             let new_token = Token {
                 address: hex::encode(address.as_bytes()),
                 symbol: symbol.clone(),
-                decimals
+                decimals,
+                coingecko_id: None,
+                usd_price: None
             };
             /// ignore the error
             /// todo: should use another task to save in batches
@@ -161,7 +163,7 @@ impl ChainWatcher {
     }
 
     pub async fn get_price_cumulative_last(&mut self, pair_address: H160) ->anyhow::Result<()> {
-        println!("get token is {:?}",token);
+        println!("get price of pool {:?}",pair_address);
         //get from chain
         let pair_contract_abi = ethabi::Contract::load(PAIR_EVENTS.as_bytes()).unwrap();
         let pair_contract = Contract::new(self.web3.eth(), pair_address, pair_contract_abi);
@@ -174,7 +176,7 @@ impl ChainWatcher {
         let new_price_cumulative = PriceCumulativeLast {
             pair_address: hex::encode(pair_address),
             price0_cumulative_last: Decimal::from_str(&price0_cumulative_last.to_string()).unwrap(),
-            price1_cumulative_last: Decimal::from_str(&price1_cumulative_last.to_string()).unwrap(),,
+            price1_cumulative_last: Decimal::from_str(&price1_cumulative_last.to_string()).unwrap(),
             block_timestamp_last: block_timestamp_last.as_u32() as i32,
         };
         /// ignore the error
@@ -184,8 +186,8 @@ impl ChainWatcher {
     }
 
     pub async fn get_all_pairs_price_cumulative_last(&mut self) ->anyhow::Result<()> {
-        for pair in self.all_pairs {
-            self.get_price_cumulative_last(pair).await?;
+        for pair in self.all_pairs.clone() {
+            self.get_price_cumulative_last(pair.clone()).await?;
         }
         Ok(())
     }
@@ -295,7 +297,7 @@ impl ChainWatcher {
             .collect()
     }
 
-    async fn run_sync_pair_created_events(&mut self) ->anyhow::Result<()> {
+    async fn run_sync_events(&mut self) ->anyhow::Result<()> {
         let last_synced_block = db::get_last_sync_block(&self.db).await?;
         let chain_block_number = self.web3.eth().block_number().await?.as_u64();
         let sync_step = 1000u64;
@@ -331,7 +333,7 @@ impl ChainWatcher {
         loop {
             println!("loop");
             tx_poll.tick().await;
-            if let Err(e) = self.run_sync_pair_created_events().await {
+            if let Err(e) = self.run_sync_events().await {
                 println!("run_sync_pair_created_events error occurred {:?}", e);
                 log::error!("run_sync_pair_created_events error occurred {:?}", e);
             }

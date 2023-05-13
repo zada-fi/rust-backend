@@ -8,6 +8,7 @@ use futures::channel::mpsc;
 use futures::SinkExt;
 use futures::StreamExt;
 use crate::watcher::watch::run_watcher;
+use crate::token_price::run_tick_price;
 
 pub mod config;
 pub mod watcher;
@@ -38,7 +39,8 @@ async fn main() -> std::io::Result<()> {
         db: db.clone()
     };
     //server::run_server(app_state).await;
-    let watcher_handlers = run_watcher(config,db).await;
+    let watcher_handler = run_watcher(config.clone(),db.clone()).await;
+    let tick_price_handler = run_tick_price(config, db).await;
 
     // handle ctrl+c
     let (stop_signal_sender, mut stop_signal_receiver) = mpsc::channel(256);
@@ -52,9 +54,13 @@ async fn main() -> std::io::Result<()> {
     }
 
     tokio::select! {
-        Err(e) = watcher_handlers => {
+        Err(e) = watcher_handler => {
             if e.is_panic() { log::error!("The one of watcher actors unexpectedly panic:{}", e) }
             log::error!("Watchers actors aren't supposed to finish any of their execution")
+        },
+        Err(e) = tick_price_handler => {
+            if e.is_panic() { log::error!("The one of tickprice actors unexpectedly panic:{}", e) }
+            log::error!("Tickprice actors aren't supposed to finish any of their execution")
         },
         _ = async { stop_signal_receiver.next().await } => {
             log::warn!("Stop signal received, shutting down");

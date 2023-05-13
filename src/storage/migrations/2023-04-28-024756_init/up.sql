@@ -40,13 +40,13 @@ CREATE TABLE tokens (
 );
 
 -- store priceCumulativeLast
-CREATE TABLE price_cumulative_last {
-    id serial NOT NULL,
-    pair_address text NOT NULL,
+CREATE TABLE price_cumulative_last (
+    id                     serial  NOT NULL,
+    pair_address           text    NOT NULL,
     price0_cumulative_last numeric NOT NULL,
     price1_cumulative_last numeric NOT NULL,
-    block_timestamp_last integer NOT NULL,
-}
+    block_timestamp_last   integer NOT NULL
+)
 -- last sync block number
 CREATE TABLE last_sync_block (
    block_number bigint NOT NULL,

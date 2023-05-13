@@ -5,8 +5,16 @@ use std::collections::HashMap;
 use crate::watcher::event::PairEvent;
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
+use bigdecimal::BigDecimal;
 
 pub(crate) mod tables;
+
+#[macro_export]
+macro_rules! db_decimal_to_big {
+    ($number:expr) => {
+        BigDecimal::from_str(&$number.to_string()).unwrap()
+    };
+}
 
 pub(crate) async fn upsert_last_sync_block(rb: &mut Rbatis, new_block : LastSyncBlock) -> anyhow::Result<()> {
     let block = LastSyncBlock::select_all(rb).await?;
@@ -193,39 +201,40 @@ pub(crate) async fn store_price(rb: &mut Rbatis, token_address:String,price: Dec
 
 pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String) -> anyhow::Result<(Decimal,Decimal)> {
     let lasest_price: Vec<PriceCumulativeLast> = rb
-        .query_decode("select * from price_cumulative_last where pair_address =  ? order by id desc limit 1",vec![rbs::to_value!(pair_address)])
+        .query_decode("select * from price_cumulative_last where pair_address =  ? \
+        order by id desc limit 1",vec![rbs::to_value!(pair_address.clone())])
         .await?;
     let mut base_price: Vec<PriceCumulativeLast> = rb
         .query_decode("select * from price_cumulative_last where pair_address =  ?  \
             and now() - block_timestamp_last > 3600 order by id asc limit 1",
-                      vec![rbs::to_value!(pair_address)])
+                      vec![rbs::to_value!(pair_address.clone())])
         .await?;
     if lasest_price.is_empty() {
-        Ok((Decimal::from_str("0").unwrap_or_default(),Decimal::from_str("0").unwrap_or_default()))
+        return Ok((Decimal::from_str("0").unwrap(),Decimal::from_str("0").unwrap()));
     }
 
     if base_price.is_empty() {
         base_price = rb
             .query_decode("select * from price_cumulative_last order by id asc limit 1",
-                          vec![rbs::to_value!(pair_address)])
+                          vec![rbs::to_value!(pair_address.clone())])
             .await?;
     }
     let (delta_price0,delta_timestamp0,delta_price1,delta_timestamp1) = (
-        (lasest_price[0].price0_cumulative_last - base_price[0].price0_cumulative_last),
+        db_decimal_to_big!(lasest_price[0].price0_cumulative_last) - db_decimal_to_big!(base_price[0].price0_cumulative_last),
         (lasest_price[0].block_timestamp_last - base_price[0].block_timestamp_last),
-        (lasest_price[1].price0_cumulative_last - base_price[1].price0_cumulative_last),
+        db_decimal_to_big!(lasest_price[1].price0_cumulative_last) - db_decimal_to_big!(base_price[1].price0_cumulative_last),
         (lasest_price[1].block_timestamp_last - base_price[1].block_timestamp_last)
     );
     let price0 = if delta_timestamp0 == 0 {
-        lasest_price[0].price0_cumulative_last
+        lasest_price[0].price0_cumulative_last.clone()
     } else {
-        delta_price0 / delta_timestamp0
+        Decimal::from_str(&(delta_price0 / delta_timestamp0).to_string()).unwrap()
     };
 
     let price1 = if delta_timestamp1 == 0 {
-        lasest_price[1].price1_cumulative_last
+        lasest_price[1].price1_cumulative_last.clone()
     } else {
-        delta_price1 / delta_timestamp1
+        Decimal::from_str(&(delta_price1 / delta_timestamp1).to_string()).unwrap()
     };
 
     Ok((price0,price1))
