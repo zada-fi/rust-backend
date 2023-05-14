@@ -3,7 +3,6 @@
 CREATE TABLE events (
      id serial NOT NULL,
      tx_hash text NOT NULL,
-     block_number
      event_type integer NOT NULL,-- add_liq/swap/rm_liq
      pair_address text NOT NULL,
      from_account text NOT NULL,
