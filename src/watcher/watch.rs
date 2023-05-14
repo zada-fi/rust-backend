@@ -216,6 +216,12 @@ impl ChainWatcher {
         let logs: Vec<PairCreatedEvent> = self.sync_events(from,to,
                          vec![self.config.contract_address],
                          vec![create_pair_topic]).await?;
+        // let pools = db::get_all_store_pools(&self.db).await.unwrap();
+        // for pool in pools {
+        //     println!("get token symbol pair address is {},token0 is {},token1 is {}",pool.pair_address,pool.token_x_address,pool.token_y_address);
+        //     self.get_token_symbol(H160::from_slice(&hex::decode(pool.token_x_address).unwrap())).await.unwrap();
+        //     self.get_token_symbol(H160::from_slice(&hex::decode(pool.token_y_address).unwrap())).await.unwrap();
+        // }
         for event in logs {
             let token_x_symbol = self.get_token_symbol(event.token0_address).await.unwrap();
             let token_y_symbol = self.get_token_symbol(event.token1_address).await.unwrap();
@@ -313,17 +319,15 @@ impl ChainWatcher {
             for pair_event_type in &pair_event_types {
                 self.sync_pair_events(start_block, end_block, pair_event_type).await?;
             }
-            start_block += sync_step;
+            start_block = end_block + 1;
 
         }
-        if last_synced_block == chain_block_number {
-            //get price_cumulative_last info here
-            self.get_all_pairs_price_cumulative_last().await?;
-            db::upsert_last_sync_block(
-                &mut self.db,
-                LastSyncBlock { block_number: chain_block_number as i64 }
-            ).await?;
-        }
+        db::upsert_last_sync_block(
+            &mut self.db,
+            LastSyncBlock { block_number: chain_block_number as i64 }
+        ).await?;
+        //get price_cumulative_last info here
+        self.get_all_pairs_price_cumulative_last().await?;
         Ok(())
     }
 
