@@ -324,7 +324,7 @@ impl ChainWatcher {
         }
         db::upsert_last_sync_block(
             &mut self.db,
-            LastSyncBlock { block_number: chain_block_number as i64 }
+            chain_block_number as i64,
         ).await?;
         //get price_cumulative_last info here
         self.get_all_pairs_price_cumulative_last().await?;
