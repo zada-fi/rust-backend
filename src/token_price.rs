@@ -12,8 +12,8 @@ use tokio::task::JoinHandle;
 use anyhow::format_err;
 use reqwest::Url;
 
-const USDC_ADDRESS: &str = "";
-const ETH_ADDRESS: &str = "";
+pub const USDC_ADDRESS: &str = "a0d71b9877f44c744546d649147e3f1e70a93760";
+pub const ETH_ADDRESS: &str = "a1ea0b2354f5a344110af2b6ad68e75545009a03";
 pub struct TokenPriceTask {
     pub db: rbatis::Rbatis,
     pub base_url: Url,
@@ -35,7 +35,7 @@ impl TokenPriceTask {
             let tokens = db::get_tokens(&self.db).await.unwrap_or_default();
             for token in tokens {
                 if let Err(e) = self.get_price(token.address).await {
-                    println!("run_sync_pair_created_events error occurred {:?}", e);
+                    println!("run tick price error occurred {:?}", e);
                     log::error!("run_sync_pair_created_events error occurred {:?}", e);
                 }
             }
@@ -112,17 +112,14 @@ impl TokenPriceTask {
                 return Ok(());
             }
 
-            let (vs_token0,pair_address) = if token_associated_pools.contains_key(&"USDC".to_string()) {
-                token_associated_pools.get(&"USDC".to_string()).unwrap()
+            let (is_usdc,vs_token0,pair_address) = if token_associated_pools.contains_key(&"USDC".to_string()) {
+                let (v,p) = token_associated_pools.get(&"USDC".to_string()).unwrap();
+                (true,v,p)
             } else {
-                token_associated_pools.get(&"ETH".to_string()).unwrap()
+                let (v,p) = token_associated_pools.get(&"ETH".to_string()).unwrap();
+                (false,v,p)
             };
-            let (price0_hour,price1_hour) = db::calculate_price_hour(&self.db,pair_address.clone()).await?;
-            if *vs_token0 {
-                price0_hour
-            } else {
-                price1_hour
-            }
+            db::calculate_price_hour(&self.db,pair_address.clone(),is_usdc,*vs_token0).await?
         };
         db::store_price(&mut self.db,token.address,price).await
     }

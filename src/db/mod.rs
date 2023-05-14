@@ -6,6 +6,7 @@ use crate::watcher::event::PairEvent;
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
 use bigdecimal::BigDecimal;
+use crate::token_price::ETH_ADDRESS;
 
 pub(crate) mod tables;
 
@@ -203,7 +204,7 @@ pub(crate) async fn store_price(rb: &mut Rbatis, token_address:String,price: Dec
     Ok(())
 }
 
-pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String) -> anyhow::Result<(Decimal,Decimal)> {
+pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String,is_vs_usdc: bool,is_vs_token_x:bool) -> anyhow::Result<(Decimal)> {
     let lasest_price: Vec<PriceCumulativeLast> = rb
         .query_decode("select * from price_cumulative_last where pair_address =  ? \
         order by id desc limit 1",vec![rbs::to_value!(pair_address.clone())])
@@ -214,7 +215,7 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String) -> anyhow::R
                       vec![rbs::to_value!(pair_address.clone())])
         .await?;
     if lasest_price.is_empty() {
-        return Ok((Decimal::from_str("0").unwrap(),Decimal::from_str("0").unwrap()));
+        return Ok(Decimal::from_str("0").unwrap());
     }
 
     if base_price.is_empty() {
@@ -229,19 +230,32 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String) -> anyhow::R
         db_decimal_to_big!(lasest_price[1].price0_cumulative_last) - db_decimal_to_big!(base_price[1].price0_cumulative_last),
         (lasest_price[1].block_timestamp_last - base_price[1].block_timestamp_last)
     );
-    let price0 = if delta_timestamp0 == 0 {
-        lasest_price[0].price0_cumulative_last.clone()
+    let mut price0 = if delta_timestamp0 == 0 {
+        BigDecimal::from_str(&lasest_price[0].price0_cumulative_last.clone().to_string()).unwrap()
     } else {
-        Decimal::from_str(&(delta_price0 / delta_timestamp0).to_string()).unwrap()
+        delta_price0 / delta_timestamp0
     };
 
-    let price1 = if delta_timestamp1 == 0 {
-        lasest_price[1].price1_cumulative_last.clone()
+    let mut price1 = if delta_timestamp1 == 0 {
+        BigDecimal::from_str(&lasest_price[1].price0_cumulative_last.clone().to_string()).unwrap()
     } else {
-        Decimal::from_str(&(delta_price1 / delta_timestamp1).to_string()).unwrap()
+        delta_price1 / delta_timestamp1
     };
 
-    Ok((price0,price1))
+    let mut price = if is_vs_token_x { price1 } else { price0 };
+    //if vs_token is ETH, it needs to be multiplied by the ratio of ETH to USDC
+    if !is_vs_usdc {
+        let eth_usd_price: Decimal = rb
+            .query_decode("select usd_price from tokens where address =  ? ",
+                          vec![rbs::to_value!(ETH_ADDRESS)])
+            .await?;
+        let eth_usd_price_big_decimal = BigDecimal::from_str(&eth_usd_price.to_string()).unwrap();
+        price  *= eth_usd_price_big_decimal;
+    }
+
+    let ret_price = Decimal::from_str(&price.to_string()).unwrap();
+
+    Ok(ret_price)
 
 }
 
