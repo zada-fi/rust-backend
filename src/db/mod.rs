@@ -16,12 +16,16 @@ macro_rules! db_decimal_to_big {
     };
 }
 
-pub(crate) async fn upsert_last_sync_block(rb: &mut Rbatis, new_block : LastSyncBlock) -> anyhow::Result<()> {
+pub(crate) async fn upsert_last_sync_block(rb: &mut Rbatis, new_block : i64) -> anyhow::Result<()> {
     let block = LastSyncBlock::select_all(rb).await?;
     if block.is_empty() {
-        LastSyncBlock::insert(rb,&new_block).await?;
+        rb.exec("insert into last_sync_block values (?)",
+                vec![rbs::to_value!(new_block)])
+            .await?;
     } else {
-        LastSyncBlock::update_by_column(rb, &new_block, "block_number").await?;
+        rb.exec("update last_sync_block set block_number = ?",
+                vec![rbs::to_value!(new_block)])
+            .await?;
     }
     Ok(())
 }
@@ -288,6 +292,22 @@ mod test {
                 vec![rbs::to_value!(count),rbs::to_value!(pair_address)])
             .await.unwrap();
 
+    }
+
+    #[tokio::test]
+    async fn test_update_last_sync_block() {
+        let mut rb = Rbatis::new();
+        let db_url = "postgres://postgres:postgres123@localhost/backend";
+        rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
+        let pool = rb
+            .get_pool()
+            .expect("get pool failed");
+        pool.resize(2);
+
+        let block_number = 1234;
+        rb.exec("insert into last_sync_block values (?)",
+                vec![rbs::to_value!(block_number)])
+            .await.unwrap();
     }
 
 }
