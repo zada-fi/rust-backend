@@ -4,12 +4,12 @@ use crate::db;
 use crate::route::BackendResponse;
 use crate::route::err::BackendError;
 
-pub async fn get_total_tvl_day(
+pub async fn get_total_tvl_volumes(
     data: web::Data<AppState>,
     _req: HttpRequest,
 ) -> actix_web::Result<HttpResponse> {
     let rb = data.db.clone();
-    match db::get_all_store_pools(&rb).await {
+    match db::get_all_tvl_volumes(&rb).await {
         Ok(pools) => {
             let resp = BackendResponse {
                 code: BackendError::Ok,
@@ -19,10 +19,10 @@ pub async fn get_total_tvl_day(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            log::warn!("get_all_pools from db failed,{:?}",e);
+            log::warn!("get_all_tvl_volumes from db failed,{:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
-                error: Some("get pools failed".to_string()),
+                error: Some("get_all_tvl_volumes failed".to_string()),
                 data: None::<()>,
             };
             Ok(HttpResponse::Ok().json(resp))

@@ -4,6 +4,8 @@ use serde::{Serialize,Deserialize};
 pub(crate) mod pools;
 mod err;
 pub mod transactions;
+pub mod pair_statistic_info;
+pub mod total_tvl;
 
 #[derive(Debug, Serialize, Clone,Deserialize)]
 pub struct BackendCommonReq {

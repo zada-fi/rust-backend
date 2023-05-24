@@ -4,6 +4,7 @@ use crate::watcher::event::PairEvent;
 use std::str::FromStr;
 use web3::ethabi::Uint;
 use rbatis::rbdc::date::Date;
+use rbatis::rbdc::datetime::DateTime;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Token {
@@ -23,6 +24,7 @@ pub struct Event {
     pub to_account: Option<String>,
     pub amount_x: Option<Decimal>,
     pub amount_y: Option<Decimal>,
+    pub event_time: Option<DateTime>
     // pub lp_amount : Option<Decimal>
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -108,6 +110,7 @@ impl From<PairEvent> for Event {
                     to_account: None,
                     amount_x: Some(Decimal::from_str(&mint.amount0.to_string()).unwrap()),
                     amount_y: Some(Decimal::from_str(&mint.amount1.to_string()).unwrap()),
+                    event_time: None
                 }
             }
             PairEvent::BurnPairEvent(burn) => {
@@ -119,6 +122,7 @@ impl From<PairEvent> for Event {
                     to_account: Some(hex::encode(burn.to.as_bytes())),
                     amount_x: Some(Decimal::from_str(&burn.amount0.to_string()).unwrap()),
                     amount_y: Some(Decimal::from_str(&burn.amount1.to_string()).unwrap()),
+                    event_time: None
                 }
             }
             PairEvent::SwapPairEvent(swap) => {
@@ -142,6 +146,7 @@ impl From<PairEvent> for Event {
                     to_account: Some(hex::encode(swap.to.as_bytes())),
                     amount_x: Some(amount_x),
                     amount_y: Some(amount_y),
+                    event_time: None
                 }
             }
             PairEvent::SyncPairEvent(sync) => {
@@ -154,6 +159,7 @@ impl From<PairEvent> for Event {
                     to_account: None,
                     amount_x: Some(Decimal::from_str(&sync.reserve0.to_string()).unwrap()),
                     amount_y: Some(Decimal::from_str(&sync.reserve1.to_string()).unwrap()),
+                    event_time: None
                 }
             }
         }

@@ -8,7 +8,7 @@ use crate::config::BackendConfig;
 use tokio::task::JoinHandle;
 use crate::db::tables::EventStat;
 use rbatis::rbdc::date::Date;
-
+use crate::db_decimal_to_big;
 
 pub struct TickSummaryTask {
     pub db: rbatis::Rbatis,
@@ -39,15 +39,13 @@ impl TickSummaryTask {
             let mut stats = Vec::new();
             for (tvl,volume) in tvls.iter().zip(volumes) {
                 let (price,x_price) = db::get_pool_usd_price(&self.db,tvl.pair_address.clone()).await.unwrap_or_default();
-                let usd_tvl = if x_price {
-                    price.clone() * BigDecimal::from_str(&tvl.amount_x.0.to_string()).unwrap()
+                let (x_decimals,y_decimals) = db::get_token_decimals_in_pool(&self.db,tvl.pair_address.clone()).await?;
+                let (usd_tvl,usd_volume) = if x_price {
+                    (price.clone() * db_decimal_to_big!(tvl.amount_x.0) / BigDecimal::from(x_decimals),
+                     price.clone() * db_decimal_to_big!(volume.amount_x.0) / BigDecimal::from(x_decimals))
                 } else {
-                    price.clone() * BigDecimal::from_str(&tvl.amount_y.0.to_string()).unwrap()
-                };
-                let usd_volume = if x_price {
-                    price.clone() * BigDecimal::from_str(&volume.amount_x.0.to_string()).unwrap()
-                } else {
-                    price * BigDecimal::from_str(&volume.amount_y.0.to_string()).unwrap()
+                    (price.clone() * db_decimal_to_big!(tvl.amount_y.0) / BigDecimal::from(y_decimals),
+                     price.clone() * db_decimal_to_big!(volume.amount_y.0) / BigDecimal::from(y_decimals))
                 };
 
                 println!("pool {:?} tvl : {:?},volume: {:?}",tvl.pair_address.clone(),usd_tvl,usd_volume);

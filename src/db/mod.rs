@@ -62,7 +62,7 @@ pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Resu
     Ok(())
 }
 pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow::Result<Vec<Event>> {
-    let offset = pg_no * PAGE_SIZE;
+    let offset = (pg_no - 1) * PAGE_SIZE;
     let events: Vec<Event> = rb
         .query_decode("select * from events where event_type != 4 order by id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(offset)])
@@ -131,7 +131,7 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<V
     // };
     //
     // if pg_no > page_count { return Ok(vec![]);}
-    let offset = pg_no * PAGE_SIZE;
+    let offset = (pg_no - 1) * PAGE_SIZE;
     let pools: Vec<PoolInfo> = rb
         .query_decode("select * from pool_info order by id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
@@ -144,6 +144,17 @@ pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Vec<Token>
         .query_decode("select * from tokens where address = ?",vec![rbs::to_value!(address)])
         .await?;
     Ok(tokens)
+}
+pub async fn get_token_decimals_in_pool(rb:&Rbatis,pair_address: String ) -> anyhow::Result<(i8,i8)> {
+    let x_decimals: i8 = rb
+        .query_decode("select t.decimals from tokens t,pools p where p.pair_address = ? \
+        and p.token_x_address = t.address",vec![rbs::to_value!(pair_address.clone())])
+        .await?;
+    let y_decimals: i8 = rb
+        .query_decode("select t.decimals from tokens t,pools p where p.pair_address = ? \
+        and p.token_y_address = t.address",vec![rbs::to_value!(pair_address)])
+        .await?;
+    Ok((x_decimals,y_decimals))
 }
 
 pub async fn get_eth_price(rb:&Rbatis) -> anyhow::Result<Decimal> {
@@ -411,34 +422,37 @@ pub async fn get_pool_usd_price(rb:&Rbatis,pair_address: String) -> anyhow::Resu
     }
     Ok((BigDecimal::from_str(&price.unwrap().0.to_string()).unwrap(),x_price))
 }
-pub async fn get_pools_stat_info(rb:&Rbatis) -> anyhow::Result<Vec<PairStatInfo>> {
+pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow::Result<Vec<PairStatInfo>> {
+    let offset = (pg_no - 1) * PAGE_SIZE;
     let pools_stat_info_day: Vec<PairStatInfo> = rb
         .query_decode("select p.pair_address,p.token_x_symbol,p.token_y_symbol,p.token_x_address,p.token_y_address,\
         coalesce(s.usd_tvl,0) as usd_tvl,coalesce(s.usd_volume,0) as usd_volume,\
         coalesce(s.usd_volume,0) as usd_volume_week from \
         pool_info p left join event_stats s on p.pair_address = s.pair_address \
-        order by s.pair_address asc", vec![])
+        order by s.usd_tvl desc offset ? limit ?", vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
-    let pools_week_volume: Vec<(String,Decimal)> = rb
-        .query_decode("select p.pair_address,sum(s.usd_volume) from \
-        pool_info p left join event_stats s on p.pair_address = s.pair_address \
-        where s.stat_date > current_date - interval '7 days' group by p.pair_address order by p.pair_address asc",
-                      vec![])
-        .await?;
-    let mut ret = pools_stat_info_day.iter().zip(pools_week_volume).map(|s| {
-        PairStatInfo {
-            pair_address: s.0.pair_address.clone(),
-            token_x_symbol: s.0.token_y_symbol.clone(),
-            token_y_symbol: s.0.token_y_symbol.clone(),
-            token_x_address: s.0.token_x_address.clone(),
-            token_y_address: s.0.token_y_address.clone(),
-            usd_tvl: s.0.usd_tvl.clone(),
-            usd_volume: s.0.usd_volume.clone(),
-            usd_volume_week: s.1.1
-        }
-    }).collect::<Vec<_>>();
-    ret.sort_by(|a,b| BigDecimal::from_str(&a.usd_tvl.0.to_string()).unwrap()
-        .partial_cmp(&BigDecimal::from_str(&b.usd_tvl.0.to_string()).unwrap() ).unwrap());
+    let mut ret = Vec::new();
+    for stat_info in pools_stat_info_day {
+        let pool_week_volume: (String, Decimal) = rb
+            .query_decode("select pair_address,sum(usd_volume) from event_stats where \
+            pair_address = ? and s.stat_date > current_date - interval '7 days'",
+                          vec![rbs::to_value!(stat_info.pair_address.clone())])
+            .await?;
+            let pair_stat_info = PairStatInfo {
+                // pair_address: stat_info.pair_address.clone(),
+                // token_x_symbol: stat_info.token_y_symbol.clone(),
+                // token_y_symbol: stat_info.token_y_symbol.clone(),
+                // token_x_address: stat_info.token_x_address.clone(),
+                // token_y_address: stat_info.token_y_address.clone(),
+                // usd_tvl: stat_info.usd_tvl.clone(),
+                // usd_volume: stat_info.usd_volume.clone(),
+                usd_volume_week:pool_week_volume.1,
+                ..stat_info
+            };
+        ret.push(pair_stat_info);
+    }
+    // ret.sort_by(|a,b| BigDecimal::from_str(&a.usd_tvl.0.to_string()).unwrap()
+    //     .partial_cmp(&BigDecimal::from_str(&b.usd_tvl.0.to_string()).unwrap() ).unwrap());
     Ok(ret)
 }
 
