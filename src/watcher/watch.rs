@@ -1,25 +1,20 @@
 use std::time::Duration;
-use ethabi::{decode, ParamType, Address};
 use std::fmt::Debug;
 use web3::{
-    transports::http,
     types::{BlockNumber, FilterBuilder, Log},
     Web3,
 };
 use crate::config::BackendConfig;
-use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast};
+use crate::db::tables::{PoolInfo, Token, PriceCumulativeLast, EventHash};
 use crate::db;
-use web3::types::{H160, H256, CallRequest, Bytes};
+use web3::types::{H160, H256};
 use web3::transports::Http;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use web3::ethabi::Uint;
 use std::collections::HashMap;
-use std::cmp::min;
 use std::cmp;
 use tokio::task::JoinHandle;
 use anyhow::format_err;
-use num::BigUint;
-use futures::FutureExt;
 use web3::contract::{Contract, Options};
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
@@ -118,9 +113,9 @@ impl ChainWatcher {
                 coingecko_id: None,
                 usd_price: None
             };
-            /// ignore the error
-            /// todo: should use another task to save in batches
-            db::save_token(&mut self.db,new_token).await;
+            // ignore the error
+            // todo: should use another task to save in batches
+            let _ret = db::save_token(&mut self.db,new_token).await;
             symbol
         } else {
             token[0].symbol.clone()
@@ -179,8 +174,8 @@ impl ChainWatcher {
             price1_cumulative_last: Decimal::from_str(&price1_cumulative_last.to_string()).unwrap(),
             block_timestamp_last: block_timestamp_last.as_u32() as i32,
         };
-        /// ignore the error
-        /// todo: should use another task to save in batches
+        // ignore the error
+        // todo: should use another task to save in batches
         db::save_price_cumulative_last(&mut self.db,new_price_cumulative).await?;
         Ok(())
     }
@@ -188,6 +183,30 @@ impl ChainWatcher {
     pub async fn get_all_pairs_price_cumulative_last(&mut self) ->anyhow::Result<()> {
         for pair in self.all_pairs.clone() {
             self.get_price_cumulative_last(pair.clone()).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn update_events_time(&mut self) ->anyhow::Result<()> {
+        loop {
+            let will_update_events:Vec<EventHash> = db::get_events_without_time(&self.db).await?;
+            if will_update_events.is_empty() {
+                break;
+            }
+            let mut update_timestamps = Vec::new();
+            for event in will_update_events {
+                let hash = H256::from_slice(&hex::decode(&event.tx_hash).unwrap());
+                let tx = self.web3.eth().transaction(hash.into()).await?;
+                let tx_time = if let Some(tx) = tx {
+                    let block = self.web3.eth().block(tx.block_number.unwrap().into()).await?;
+                    if let Some(block) = block {
+                        block.timestamp.as_u32() as i32
+                    } else { 0i32 }
+                } else { 0i32 };
+                println!("block time is {}",tx_time);
+                update_timestamps.push((event.id,tx_time));
+            }
+            db::update_events_timestamp(&mut self.db,update_timestamps).await?;
         }
         Ok(())
     }
@@ -245,7 +264,7 @@ impl ChainWatcher {
             };
 
             self.all_pairs.push(event.pair_address);
-            /// todo: should use another task to save in batches
+            // todo: should use another task to save in batches
             db::save_pool(&mut self.db,&pool).await?;
         }
 
@@ -283,7 +302,7 @@ impl ChainWatcher {
             .topics(Some(topics), None, None, None)
             .build();
         let mut logs = self.web3.eth().logs(filter).await?;
-        //println!("get logs {:?}",logs);
+        // println!("get logs {:?}",logs);
         let is_possible_to_sort_logs = logs.iter().all(|log| log.log_index.is_some());
         if is_possible_to_sort_logs {
             logs.sort_by_key(|log| {
@@ -308,10 +327,10 @@ impl ChainWatcher {
         let chain_block_number = self.web3.eth().block_number().await?.as_u64();
         let sync_step = 1000u64;
         let mut start_block = last_synced_block + 1;
-        let mut end_block = start_block;
+        let mut end_block;
         let pair_event_types = vec!["mint","burn","swap","sync"];
         loop {
-            end_block = cmp::min(chain_block_number,(start_block + sync_step));
+            end_block = cmp::min(chain_block_number,start_block + sync_step);
             if start_block > end_block {
                 break;
             }
@@ -328,6 +347,8 @@ impl ChainWatcher {
         ).await?;
         //get price_cumulative_last info here
         self.get_all_pairs_price_cumulative_last().await?;
+        //update events timestamp
+        self.update_events_time().await?;
         Ok(())
     }
 
@@ -347,6 +368,6 @@ impl ChainWatcher {
 }
 pub async fn run_watcher(config: BackendConfig, db: rbatis::Rbatis) -> JoinHandle<()> {
     log::info!("Starting watcher!");
-    let mut watcher = ChainWatcher::new(config, db).await.unwrap();
+    let watcher = ChainWatcher::new(config, db).await.unwrap();
     tokio::spawn(watcher.run_watcher_server())
 }

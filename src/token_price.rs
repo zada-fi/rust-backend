@@ -1,10 +1,6 @@
-
-use web3::types::Address;
 use crate::db;
-use crate::db::calculate_price_hour;
 use std::time::Duration;
 use std::collections::HashMap;
-use bigdecimal::{BigDecimal, FromPrimitive};
 use std::str::FromStr;
 use rbatis::rbdc::decimal::Decimal;
 use crate::config::BackendConfig;
@@ -91,18 +87,29 @@ impl TokenPriceTask {
         } else {
             //We assume that the token issued by the user will be pooled with USDC or ETH
             let all_pools = db::get_all_store_pools(&self.db).await?;
-            let mut token_associated_pools: HashMap<String,(bool,String)> = HashMap::new();
+            let mut token_associated_pools: HashMap<String,(bool,String,String,String)> = HashMap::new();
             for pool in all_pools {
                 if pool.token_x_address != token_address.clone() && pool.token_y_address != token_address.clone() {
                     continue;
                 }
 
                 if pool.token_x_address == USDC_ADDRESS || pool.token_y_address == USDC_ADDRESS {
-                    token_associated_pools.insert("USDC".to_string(),(pool.token_x_symbol == "USDC",pool.pair_address));
+                    token_associated_pools.insert("USDC".to_string(),
+                                                  (pool.token_x_symbol == "USDC",
+                                                      pool.pair_address,
+                                                      pool.token_x_address,
+                                                      pool.token_y_address,
+                                                  ));
                     break;
                 }
                 if pool.token_x_address == ETH_ADDRESS || pool.token_y_address == ETH_ADDRESS {
-                    token_associated_pools.insert("ETH".to_string(),(pool.token_x_symbol == "ETH",pool.pair_address));
+                    token_associated_pools.insert("ETH".to_string(),
+                                                  (pool.token_x_symbol == "ETH",
+                                                      pool.pair_address,
+                                                      pool.token_x_address,
+                                                      pool.token_y_address,
+                                                  )
+                    );
                 }
             }
 
@@ -112,14 +119,22 @@ impl TokenPriceTask {
                 return Ok(());
             }
 
-            let (is_usdc,vs_token0,pair_address) = if token_associated_pools.contains_key(&"USDC".to_string()) {
-                let (v,p) = token_associated_pools.get(&"USDC".to_string()).unwrap();
-                (true,v,p)
+            let (is_usdc,vs_token0,pair_address,token_x,token_y) = if token_associated_pools.contains_key(&"USDC".to_string()) {
+                let (v,p,x,y) = token_associated_pools.get(&"USDC".to_string()).unwrap();
+                (true,v,p,x,y)
             } else {
-                let (v,p) = token_associated_pools.get(&"ETH".to_string()).unwrap();
-                (false,v,p)
+                let (v,p,x,y) = token_associated_pools.get(&"ETH".to_string()).unwrap();
+                (false,v,p,x,y)
             };
-            db::calculate_price_hour(&self.db,pair_address.clone(),is_usdc,*vs_token0).await?
+            let token_x_decimals: i32= self.db
+                .query_decode("select decimals from tokens where address =  ? ",
+                              vec![rbs::to_value!(token_x)])
+                .await?;
+            let token_y_decimals: i32= self.db
+                .query_decode("select decimals from tokens where address =  ? ",
+                              vec![rbs::to_value!(token_y)])
+                .await?;
+            db::calculate_price_hour(&self.db,pair_address.clone(),is_usdc,*vs_token0,token_x_decimals,token_y_decimals).await?
         };
         db::store_price(&mut self.db,token.address,price).await
     }
@@ -129,6 +144,6 @@ pub async fn run_tick_price(config: BackendConfig, db: rbatis::Rbatis) -> JoinHa
     log::info!("Starting tick price!");
     let client = reqwest::Client::new();
     let base_url =  Url::from_str(&config.coingecko_url).unwrap();
-    let mut task = TokenPriceTask::new(db,base_url,client);
+    let task = TokenPriceTask::new(db,base_url,client);
     tokio::spawn(task.run_tick_price())
 }

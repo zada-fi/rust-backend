@@ -4,26 +4,26 @@ use crate::db;
 use crate::route::{BackendResponse, BackendCommonReq};
 use crate::route::err::BackendError;
 
-pub async fn get_all_pools(
+pub async fn get_all_transactions(
     data: web::Data<AppState>,
     msg: web::Json<BackendCommonReq>,
 ) -> actix_web::Result<HttpResponse> {
     let rb = data.db.clone();
 
-    match db::get_pools_by_page_number(&rb,msg.pg_no).await {
-        Ok(pools) => {
+    match db::get_events_by_page_number(&rb,msg.pg_no).await {
+        Ok(txs) => {
             let resp = BackendResponse {
                 code: BackendError::Ok,
                 error: None,
-                data: Some(pools)
+                data: Some(txs)
             };
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            log::warn!("get_all_pools from db failed,{:?}",e);
+            log::warn!("get_all_transactions from db failed,{:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
-                error: Some("get pools failed".to_string()),
+                error: Some("get events failed".to_string()),
                 data: None::<()>,
             };
             Ok(HttpResponse::Ok().json(resp))

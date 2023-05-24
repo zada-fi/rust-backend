@@ -1,16 +1,16 @@
-use actix_web::{web, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 use crate::server::AppState;
 use crate::db;
-use crate::route::{BackendResponse, BackendCommonReq};
+use crate::route::BackendResponse;
 use crate::route::err::BackendError;
 
-pub async fn get_all_pools(
+pub async fn get_pair_statistic_info(
     data: web::Data<AppState>,
-    msg: web::Json<BackendCommonReq>,
+    _req: HttpRequest,
 ) -> actix_web::Result<HttpResponse> {
     let rb = data.db.clone();
 
-    match db::get_pools_by_page_number(&rb,msg.pg_no).await {
+    match db::get_all_store_pools(&rb).await {
         Ok(pools) => {
             let resp = BackendResponse {
                 code: BackendError::Ok,

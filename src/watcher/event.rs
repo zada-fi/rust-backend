@@ -40,10 +40,10 @@ pub struct PairSyncEvent {
 pub struct PairSwapEvent {
     pub meta: EventData,
     pub sender:Address,
-    pub amount0In: Uint,
-    pub amount1In: Uint,
-    pub amount0Out: Uint,
-    pub amount1Out: Uint,
+    pub amount0in: Uint,
+    pub amount1in: Uint,
+    pub amount0out: Uint,
+    pub amount1out: Uint,
     pub to: Address
 }
 
@@ -135,7 +135,7 @@ impl TryFrom<Log> for PairCreatedEvent {
     type Error = ethabi::Error;
 
     fn try_from(event: Log) -> Result<Self, Self::Error> {
-        let mut dec_ev = decode(
+        let dec_ev = decode(
             &[
                 ParamType::Address,//pair_address
                 ParamType::Uint(256), // all_pairs length
@@ -162,22 +162,28 @@ impl TryFrom<Log> for PairEvent {
         let event_type = EventType::from_log_topic(event.topics[0]);
         let pair_event = match event_type {
             EventType::AddLiq => {
-                let mut dec_ev = decode(
+                let dec_ev = decode(
                     &[
                         ParamType::Uint(256), // amount0
                         ParamType::Uint(256), // amount1
                     ],
                     &event.data.0,
                 )?;
+                println!("find mint event tx_hash is {} ",hex::encode(meta.tx_hash.as_bytes()));
+                let sender = if event.topics.len() < 2 {
+                    H160::zero()
+                } else {
+                    H160::from_slice(&event.topics[1].as_bytes()[12..])
+                };
                 PairEvent::MintPairEvent(PairMintEvent {
                     meta,
-                    sender: H160::from_slice(&event.topics[1].as_bytes()[12..]),
+                    sender: sender,
                     amount0: dec_ev[0].clone().into_uint().unwrap(),
                     amount1: dec_ev[1].clone().into_uint().unwrap(),
                 })
             },
             EventType::RmvLiq => {
-                let mut dec_ev = decode(
+                let dec_ev = decode(
                     &[
                         ParamType::Uint(256), // amount0
                         ParamType::Uint(256), // amount1
@@ -193,7 +199,7 @@ impl TryFrom<Log> for PairEvent {
                 })
             },
             EventType::Swap => {
-                let mut dec_ev = decode(
+                let  dec_ev = decode(
                     &[
                         ParamType::Uint(256), // amount0in
                         ParamType::Uint(256), // amount1in
@@ -205,15 +211,15 @@ impl TryFrom<Log> for PairEvent {
                 PairEvent::SwapPairEvent(PairSwapEvent {
                     meta,
                     sender: H160::from_slice(&event.topics[1].as_bytes()[12..]),
-                    amount0In: dec_ev[0].clone().into_uint().unwrap(),
-                    amount1In: dec_ev[1].clone().into_uint().unwrap(),
-                    amount0Out: dec_ev[2].clone().into_uint().unwrap(),
-                    amount1Out: dec_ev[3].clone().into_uint().unwrap(),
+                    amount0in: dec_ev[0].clone().into_uint().unwrap(),
+                    amount1in: dec_ev[1].clone().into_uint().unwrap(),
+                    amount0out: dec_ev[2].clone().into_uint().unwrap(),
+                    amount1out: dec_ev[3].clone().into_uint().unwrap(),
                     to: H160::from_slice(&event.topics[1].as_bytes()[12..])
                 })
             },
             EventType::Sync => {
-                let mut dec_ev = decode(
+                let dec_ev = decode(
                     &[
                         ParamType::Uint(112), // reserve0
                         ParamType::Uint(112), // reserve1
@@ -226,9 +232,6 @@ impl TryFrom<Log> for PairEvent {
                     reserve1: dec_ev[1].clone().into_uint().unwrap(),
                 })
             },
-            _ => {
-                panic!("Not supported")
-            }
         };
         Ok(pair_event)
     }

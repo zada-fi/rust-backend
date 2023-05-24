@@ -5,11 +5,12 @@ CREATE TABLE events (
      tx_hash text NOT NULL,
      event_type integer NOT NULL,-- add_liq/swap/rm_liq
      pair_address text NOT NULL,
-     from_account text NOT NULL,
+     from_account text,
      to_account text,
      amount_x numeric , -- while swap if x->y :x>0&&y==0 else y>0 && x==0;while add_liq x,y > 0
      amount_y numeric,
-     PRIMARY KEY (id)
+     event_time timestamp with time zone,
+     PRIMARY KEY (id),
 );
 
 -- store amm pool info
@@ -45,9 +46,23 @@ CREATE TABLE price_cumulative_last (
     price0_cumulative_last numeric NOT NULL,
     price1_cumulative_last numeric NOT NULL,
     block_timestamp_last   integer NOT NULL
-)
+);
 -- last sync block number
 CREATE TABLE last_sync_block (
    block_number bigint NOT NULL,
    PRIMARY KEY (block_number)
 );
+
+-- store tvl and volume every day
+CREATE TABLE event_stats (
+--     id serial NOT NULL,
+    pair_address text NOT NULL,
+    stat_date date NOT NULL,
+    x_reserves numeric NOT NULL,
+    y_reserves numeric NOT NULL,
+    x_volume numeric NOT NULL,
+    y_volume numeric NOT NULL,
+    usd_tvl numeric NOT NULL,
+    usd_volume numeric NOT NULL,
+    PRIMARY KEY (pair_address,stat_date)
+)
