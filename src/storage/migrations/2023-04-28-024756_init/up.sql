@@ -10,7 +10,7 @@ CREATE TABLE events (
      amount_x numeric , -- while swap if x->y :x>0&&y==0 else y>0 && x==0;while add_liq x,y > 0
      amount_y numeric,
      event_time timestamp with time zone,
-     PRIMARY KEY (id),
+     PRIMARY KEY (id)
 );
 
 -- store amm pool info

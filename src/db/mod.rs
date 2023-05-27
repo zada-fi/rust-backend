@@ -337,11 +337,12 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String, is_vs_usdc: 
             .query_decode("select usd_price from tokens where address =  ? ",
                           vec![rbs::to_value!(ETH_ADDRESS)])
             .await?;
-        let eth_usd_price_big_decimal = BigDecimal::from_str(&eth_usd_price.to_string()).unwrap();
+        let eth_usd_price_big_decimal = BigDecimal::from_str(&eth_usd_price.0.to_string()).unwrap_or_default();
         price  *= eth_usd_price_big_decimal;
     }
 
-    let ret_price = Decimal::from_str(&price.to_string()).unwrap();
+    let price_round = format!("{:.2}",price);
+    let ret_price = Decimal::from_str(&price_round).unwrap();
 
     Ok(ret_price)
 
@@ -581,5 +582,12 @@ mod test {
     //     //println!("{:?}",price);
     //
     // }
+    #[test]
+    fn test_price_round() {
+        let price = 2776241.005739527237224783614307467819823209977418423578576313402819369935414783867599908262491226196000000000000;
+        let price_round = format!("{:.2}",price);
+        let ret_price = Decimal::from_str(&price_round).unwrap();
+        println!("{:?}",ret_price)
+    }
 
 }
