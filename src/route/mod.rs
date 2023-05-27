@@ -12,6 +12,11 @@ pub struct BackendCommonReq {
     pub pg_no: i32,
 }
 #[derive(Debug, Serialize, Clone)]
+pub struct DataWithPageCount<T: Clone + Serialize> {
+    pub page_count: usize,
+    pub data: Option<T>
+}
+#[derive(Debug, Serialize, Clone)]
 pub struct BackendResponse<T: Clone + Serialize> {
     pub code: BackendError,
     pub error: Option<String>,

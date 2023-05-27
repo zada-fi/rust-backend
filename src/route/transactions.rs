@@ -1,7 +1,7 @@
 use actix_web::{web, HttpResponse};
 use crate::server::AppState;
 use crate::db;
-use crate::route::{BackendResponse, BackendCommonReq};
+use crate::route::{BackendResponse, BackendCommonReq, DataWithPageCount};
 use crate::route::err::BackendError;
 
 pub async fn get_all_transactions(
@@ -11,11 +11,13 @@ pub async fn get_all_transactions(
     let rb = data.db.clone();
 
     match db::get_events_by_page_number(&rb,msg.pg_no).await {
-        Ok(txs) => {
+        Ok((page_count,txs)) => {
             let resp = BackendResponse {
                 code: BackendError::Ok,
                 error: None,
-                data: Some(txs)
+                data: Some(DataWithPageCount {
+                    page_count,
+                    data: Some(txs)})
             };
             Ok(HttpResponse::Ok().json(resp))
         },

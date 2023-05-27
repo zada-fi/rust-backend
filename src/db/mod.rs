@@ -61,13 +61,15 @@ pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Resu
     tx.commit().await?;
     Ok(())
 }
-pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow::Result<Vec<Event>> {
+pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow::Result<(usize,Vec<Event>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let events: Vec<Event> = rb
         .query_decode("select * from events where event_type != 4 order by id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(offset)])
         .await?;
-    Ok(events)
+    let quo = events.len() / PAGE_SIZE as usize;
+    let pg_count = if events.len() % PAGE_SIZE as usize> 0 { quo + 1 } else { quo } ;
+    Ok((pg_count,events))
 }
 pub(crate) async fn get_events_without_time(rb: &Rbatis) -> anyhow::Result<Vec<EventHash>> {
     let events: Vec<EventHash> = rb
@@ -120,7 +122,7 @@ pub async fn get_all_store_pools(rb:&Rbatis ) -> anyhow::Result<Vec<PoolInfo>> {
         .await?;
     Ok(pools)
 }
-pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<Vec<PoolInfo>> {
+pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<PoolInfo>)> {
     // let pools_count: i32 = rb
     //     .query_decode("select count(1) from pool_info",vec![])
     //     .await?;
@@ -136,7 +138,9 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<V
         .query_decode("select * from pool_info order by id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
-    Ok(pools)
+    let quo = pools.len() / PAGE_SIZE as usize;
+    let pg_count = if pools.len() % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
+    Ok((pg_count,pools))
 }
 
 pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Vec<Token>> {
@@ -422,7 +426,7 @@ pub async fn get_pool_usd_price(rb:&Rbatis,pair_address: String) -> anyhow::Resu
     }
     Ok((BigDecimal::from_str(&price.unwrap().0.to_string()).unwrap(),x_price))
 }
-pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow::Result<Vec<PairStatInfo>> {
+pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow::Result<(usize,Vec<PairStatInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let pools_stat_info_day: Vec<PairStatInfo> = rb
         .query_decode("select p.pair_address,p.token_x_symbol,p.token_y_symbol,p.token_x_address,p.token_y_address,\
@@ -439,21 +443,14 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
                           vec![rbs::to_value!(stat_info.pair_address.clone())])
             .await?;
             let pair_stat_info = PairStatInfo {
-                // pair_address: stat_info.pair_address.clone(),
-                // token_x_symbol: stat_info.token_y_symbol.clone(),
-                // token_y_symbol: stat_info.token_y_symbol.clone(),
-                // token_x_address: stat_info.token_x_address.clone(),
-                // token_y_address: stat_info.token_y_address.clone(),
-                // usd_tvl: stat_info.usd_tvl.clone(),
-                // usd_volume: stat_info.usd_volume.clone(),
                 usd_volume_week:pool_week_volume.1,
                 ..stat_info
             };
         ret.push(pair_stat_info);
     }
-    // ret.sort_by(|a,b| BigDecimal::from_str(&a.usd_tvl.0.to_string()).unwrap()
-    //     .partial_cmp(&BigDecimal::from_str(&b.usd_tvl.0.to_string()).unwrap() ).unwrap());
-    Ok(ret)
+    let quo = ret.len() / PAGE_SIZE as usize;
+    let pg_count = if ret.len() % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
+    Ok((pg_count,ret))
 }
 
 pub async fn get_all_tvl_volumes(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal,Decimal)>> {
