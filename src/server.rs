@@ -4,6 +4,9 @@ use std::net::SocketAddr;
 use actix_web::App;
 use crate::route::pools::get_all_pools;
 use std::thread;
+use crate::route::transactions::get_all_transactions;
+use crate::route::pair_statistic_info::get_pair_statistic_info;
+use crate::route::total_tvl::{get_total_tvl_by_day, get_total_volume_by_day};
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -35,8 +38,10 @@ pub async fn run_rpc_server(app_state: AppState) {
             // .wrap(cors)
             .app_data(web::Data::new(app_state.clone()))
             .route("/get_all_pools", web::get().to(get_all_pools))
-            .route("/get_all_pools", web::get().to(get_all_pools))
-            .route("/get_all_pools", web::get().to(get_all_pools))
+            .route("/get_all_transactions", web::get().to(get_all_transactions))
+            .route("/get_total_tvl_by_day", web::get().to(get_total_tvl_by_day))
+            .route("/get_total_volume_by_day", web::get().to(get_total_volume_by_day))
+            .route("/get_pair_statistic_info", web::get().to(get_pair_statistic_info))
     })
         .workers(works_number as usize)
         .bind(&bind_to)

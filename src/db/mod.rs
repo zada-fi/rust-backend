@@ -455,11 +455,17 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
     Ok((pg_count,ret))
 }
 
-pub async fn get_all_tvl_volumes(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal,Decimal)>> {
-    let all_tvls: Vec<(Date,Decimal,Decimal)> = rb
-        .query_decode("select stat_date,sum(usd_tvl) as tvl,sum(usd_volume) as volume from event_stats \
+pub async fn get_all_tvls_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal)>> {
+    let all_tvls: Vec<(Date,Decimal)> = rb
+        .query_decode("select stat_date,sum(usd_tvl) as total_tvl from event_stats \
         group by stat_date order by stat_date desc", vec![]).await?;
     Ok(all_tvls)
+}
+pub async fn get_all_volumes_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal)>> {
+    let all_volumes: Vec<(Date,Decimal)> = rb
+        .query_decode("select stat_date,sum(usd_volume) as total_volume from event_stats \
+        group by stat_date order by stat_date desc", vec![]).await?;
+    Ok(all_volumes)
 }
 #[cfg(test)]
 mod test {
@@ -539,19 +545,6 @@ mod test {
 
     }
 
-    #[tokio::test]
-    async fn test_pair_stat_info() {
-        let rb = Rbatis::new();
-        let db_url = "postgres://postgres:postgres123@localhost/backend";
-        rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
-        let pool = rb
-            .get_pool()
-            .expect("get pool failed");
-        pool.resize(2);
-        let price = get_all_tvl_volumes(&rb).await.unwrap();
-        println!("{:?}",price);
-
-    }
     //
     #[tokio::test]
     async fn test_calculate_price() {
