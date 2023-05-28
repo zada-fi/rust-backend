@@ -341,7 +341,8 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String, is_vs_usdc: 
         price  *= eth_usd_price_big_decimal;
     }
 
-    let price_round = format!("{:.2}",price);
+    let price_round = format!("{:.18}",price);
+    println!("price_round is {:?}",price_round);
     let ret_price = Decimal::from_str(&price_round).unwrap();
 
     Ok(ret_price)

@@ -343,6 +343,7 @@ impl ChainWatcher {
             }
             self.sync_pair_created_events(start_block,end_block).await?;
             if self.all_pairs.len() == 0 {
+                start_block = end_block + 1;
                 continue;
             }
             for pair_event_type in &pair_event_types {

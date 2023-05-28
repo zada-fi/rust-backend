@@ -60,7 +60,7 @@ impl TokenPriceTask {
                 .get(simple_price_url)
                 .timeout(Duration::from_secs(120))
                 .query(&[
-                    ("vs_currency", "usd"),
+                    ("vs_currencies", "usd"),
                     ("ids", &coingecko_id),
                 ])
                 .send()
@@ -146,4 +146,40 @@ pub async fn run_tick_price(config: BackendConfig, db: rbatis::Rbatis) -> JoinHa
     let base_url =  Url::from_str(&config.coingecko_url).unwrap();
     let task = TokenPriceTask::new(db,base_url,client);
     tokio::spawn(task.run_tick_price())
+}
+
+#[cfg(test)]
+mod test {
+    use std::time::Duration;
+    use reqwest::Url;
+    use std::str::FromStr;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    pub async fn test_get_price_from_coingecko() {
+        let base_url = Url::from_str(&"https://api.coingecko.com".to_string()).unwrap();
+        let client = reqwest::Client::new();
+        let coingecko_id = "weth".to_string();
+        let simple_price_url = base_url
+            .join(format!("api/v3/simple/price").as_str())
+            .expect("Failed to join URL path");
+
+        let simple_price = client
+            .get(simple_price_url)
+            .timeout(Duration::from_secs(120))
+            .query(&[
+                ("vs_currency", "usd"),
+                ("ids", &coingecko_id),
+            ])
+            .send()
+            .await
+            .map_err(|err| anyhow::format_err!("CoinGecko API request failed: {}", err)).unwrap()
+            .json::<HashMap<String,HashMap<String,f64>>>()
+            .await
+            .map_err(|err| anyhow::format_err!("Parse response data failed: {}", err)).unwrap();
+        if simple_price.is_empty()  {
+            println!("Response is empty");
+        }
+    }
+
 }
