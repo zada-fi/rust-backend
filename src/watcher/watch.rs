@@ -19,6 +19,7 @@ use web3::contract::{Contract, Options};
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
 use crate::watcher::event::{ PairCreatedEvent, PairEvent};
+use crate::token_price::ETH_ADDRESS;
 
 const FACTORY_EVENTS: &str = include_str!("../abi/factory_abi.json");
 const PAIR_EVENTS: &str = include_str!("../abi/pair_abi.json");
@@ -106,11 +107,12 @@ impl ChainWatcher {
                 .await?;
             let decimals: u8 = erc20_contract.query("decimals",(),None, Options::default(), None)
                 .await?;
+            let address_str = hex::encode(address.as_bytes())
             let new_token = Token {
-                address: hex::encode(address.as_bytes()),
+                address: address_str,
                 symbol: symbol.clone(),
                 decimals,
-                coingecko_id: None,
+                coingecko_id: if address_str == ETH_ADDRESS { Some("weth".to_string()) } else { None },
                 usd_price: None
             };
             // ignore the error
@@ -340,6 +342,9 @@ impl ChainWatcher {
                 break;
             }
             self.sync_pair_created_events(start_block,end_block).await?;
+            if self.all_pairs.len() == 0 {
+                continue;
+            }
             for pair_event_type in &pair_event_types {
                 self.sync_pair_events(start_block, end_block, pair_event_type).await?;
             }
@@ -363,8 +368,8 @@ impl ChainWatcher {
             println!("loop");
             tx_poll.tick().await;
             if let Err(e) = self.run_sync_events().await {
-                println!("run_sync_pair_created_events error occurred {:?}", e);
-                log::error!("run_sync_pair_created_events error occurred {:?}", e);
+                println!("run_sync_pair_events error occurred {:?}", e);
+                log::error!("run_sync_pair_events error occurred {:?}", e);
             }
 
         }
