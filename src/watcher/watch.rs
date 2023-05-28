@@ -22,7 +22,7 @@ use crate::watcher::event::{ PairCreatedEvent, PairEvent};
 
 const FACTORY_EVENTS: &str = include_str!("../abi/factory_abi.json");
 const PAIR_EVENTS: &str = include_str!("../abi/pair_abi.json");
-
+#[derive(Clone)]
 pub struct ChainWatcher {
     pub config: BackendConfig,
     pub web3: Web3<Http>,
@@ -278,6 +278,11 @@ impl ChainWatcher {
         pair_type: &str,
     ) -> anyhow::Result<()> {
         let topics = vec![self.pair_topics.get(pair_type).unwrap().clone()];
+        //if the addresses of the filter is empty,it will filter only by topics,finally will get the
+        //other contract's events with the same topics
+        if self.all_pairs.len() == 0 {
+            return Err(format_err!("filter's addresses is empty!"));
+        }
         let logs: Vec<PairEvent> = self.sync_events(from,to, self.all_pairs.clone(), topics).await?;
         if !logs.is_empty() {
             db::store_pair_events(&mut self.db, logs).await?;
@@ -339,16 +344,15 @@ impl ChainWatcher {
                 self.sync_pair_events(start_block, end_block, pair_event_type).await?;
             }
             start_block = end_block + 1;
+            db::upsert_last_sync_block(
+                &mut self.db,
+                end_block as i64,
+            ).await?;
 
         }
-        db::upsert_last_sync_block(
-            &mut self.db,
-            chain_block_number as i64,
-        ).await?;
+
         //get price_cumulative_last info here
         self.get_all_pairs_price_cumulative_last().await?;
-        //update events timestamp
-        self.update_events_time().await?;
         Ok(())
     }
 
@@ -365,9 +369,23 @@ impl ChainWatcher {
 
         }
     }
+    pub async fn run_update_events_time(mut self) {
+        println!("run_update_events_time");
+        let mut tx_poll = tokio::time::interval(Duration::from_secs(120));
+        loop {
+            tx_poll.tick().await;
+            if let Err(e) = self.update_events_time().await {
+                println!("update_events_time error occurred {:?}", e);
+                log::error!("update_events_time error occurred {:?}", e);
+            }
+
+        }
+    }
 }
 pub async fn run_watcher(config: BackendConfig, db: rbatis::Rbatis) -> JoinHandle<()> {
     log::info!("Starting watcher!");
     let watcher = ChainWatcher::new(config, db).await.unwrap();
-    tokio::spawn(watcher.run_watcher_server())
+    tokio::spawn(watcher.clone().run_watcher_server());
+    //update events timestamp
+    tokio::spawn(watcher.run_update_events_time())
 }
