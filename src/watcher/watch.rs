@@ -107,9 +107,9 @@ impl ChainWatcher {
                 .await?;
             let decimals: u8 = erc20_contract.query("decimals",(),None, Options::default(), None)
                 .await?;
-            let address_str = hex::encode(address.as_bytes())
+            let address_str = hex::encode(address.as_bytes());
             let new_token = Token {
-                address: address_str,
+                address: address_str.clone(),
                 symbol: symbol.clone(),
                 decimals,
                 coingecko_id: if address_str == ETH_ADDRESS { Some("weth".to_string()) } else { None },
