@@ -7,6 +7,7 @@ use std::thread;
 use crate::route::transactions::get_all_transactions;
 use crate::route::pair_statistic_info::get_pair_statistic_info;
 use crate::route::total_tvl::{get_total_tvl_by_day, get_total_volume_by_day};
+use actix_cors::Cors;
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -30,12 +31,10 @@ pub async fn run_rpc_server(app_state: AppState) {
     let bind_to = SocketAddr::new("0.0.0.0".parse().unwrap(),
                                   app_state.config.server_port as u16);
     HttpServer::new(move || {
-        // let mut cors = Cors::default();
-        // if app_state.config.admin.enable_http_cors {
-        //     cors = Cors::permissive();
-        // }
+        let mut cors = Cors::default();
+        cors = Cors::permissive();
         App::new()
-            // .wrap(cors)
+            .wrap(cors)
             .app_data(web::Data::new(app_state.clone()))
             .route("/get_all_pools", web::get().to(get_all_pools))
             .route("/get_all_transactions", web::get().to(get_all_transactions))
