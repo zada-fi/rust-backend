@@ -1,5 +1,5 @@
 use rbatis::Rbatis;
-use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStat, EventStatData, PairStatInfo};
+use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStat, EventStatData, PairStatInfo, EventInfo};
 use num::{ToPrimitive, BigUint};
 use std::collections::HashMap;
 use crate::watcher::event::PairEvent;
@@ -61,10 +61,13 @@ pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Resu
     tx.commit().await?;
     Ok(())
 }
-pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow::Result<(usize,Vec<Event>)> {
+pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow::Result<(usize,Vec<EventInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
-    let events: Vec<Event> = rb
-        .query_decode("select * from events where event_type != 4 order by id desc offset ? limit ? ",
+    let events: Vec<EventInfo> = rb
+        .query_decode("select e.*,t1.symbol as token_x_symbol,t2.symbol as token_y_symbol from events e,pool_info p,tokens t1,tokens t2 where \
+        e.event_type != 4 and e.pair_address = p.pair_address and p.token_x_address = t1.address and \
+        p.token_y_address = t2.address \
+        order by id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(offset)])
         .await?;
     let quo = events.len() / PAGE_SIZE as usize;

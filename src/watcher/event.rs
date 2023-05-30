@@ -130,6 +130,39 @@ impl EventType {
             panic!("Unreachable")
         }
     }
+    pub fn from_u8(v:u8) -> Self{
+        match v {
+            1 => {
+                Self::AddLiq
+            },
+            2 => {
+                Self::RmvLiq
+            },
+            3 => {
+                Self::Swap
+            },
+            4 => {
+                Self::Sync
+            }
+            _ => { panic!("Unreachable!")}
+        }
+    }
+    pub fn get_name(&self) -> String{
+        match self {
+            EventType::AddLiq => {
+                "AddLiquidity".to_string()
+            },
+            EventType::RmvLiq => {
+                "RemoveLiquidity".to_string()
+            },
+            EventType::Swap => {
+                "Swap".to_string()
+            },
+            EventType::Sync => {
+                "Sync".to_string()
+            }
+        }
+    }
 }
 impl TryFrom<Log> for PairCreatedEvent {
     type Error = ethabi::Error;

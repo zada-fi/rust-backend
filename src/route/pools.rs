@@ -4,7 +4,17 @@ use crate::db;
 use crate::route::BackendResponse;
 use crate::route::err::BackendError;
 use qstring::QString;
+use rbatis::rbdc::decimal::Decimal;
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct RespPoolInfo {
+    pub pair_name: String,
+    pub pair_address: String,
+    pub token_x_address: String,
+    pub token_y_address: String,
+    pub x_reserves: Decimal,
+    pub y_reserves: Decimal,
+}
 pub async fn get_all_pools(
     data: web::Data<AppState>,
     req: HttpRequest,
@@ -15,10 +25,20 @@ pub async fn get_all_pools(
     let pg_no = qs.get("pg_no").unwrap_or("0").parse::<i32>().unwrap();
     match db::get_pools_by_page_number(&rb,pg_no).await {
         Ok(pools) => {
+            let resp_pools = pools.1.iter().map(|p| {
+                RespPoolInfo {
+                    pair_name: format!("{:?}-{:?}",p.token_x_symbol.clone(),p.token_y_symbol.clone()),
+                    pair_address: p.pair_address.clone(),
+                    token_x_address: p.token_x_address.clone(),
+                    token_y_address: p.token_y_address.clone(),
+                    x_reserves: p.token_x_reserves.clone(),
+                    y_reserves: p.token_y_reserves.clone(),
+                }
+            }).collect::<Vec<_>>();
             let resp = BackendResponse {
                 code: BackendError::Ok,
                 error: None,
-                data: Some(pools)
+                data: Some((pools.0,resp_pools))
             };
             Ok(HttpResponse::Ok().json(resp))
         },

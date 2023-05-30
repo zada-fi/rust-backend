@@ -24,8 +24,15 @@ pub struct Event {
     pub to_account: Option<String>,
     pub amount_x: Option<Decimal>,
     pub amount_y: Option<Decimal>,
-    pub event_time: Option<DateTime>
+    pub event_time: Option<DateTime>,
+    pub is_swap_x2y: Option<bool>
     // pub lp_amount : Option<Decimal>
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct EventInfo {
+    pub event: Event,
+    pub token_x_symbol: String,
+    pub token_y_symbol: String,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct EventStat {
@@ -110,7 +117,8 @@ impl From<PairEvent> for Event {
                     to_account: None,
                     amount_x: Some(Decimal::from_str(&mint.amount0.to_string()).unwrap()),
                     amount_y: Some(Decimal::from_str(&mint.amount1.to_string()).unwrap()),
-                    event_time: None
+                    event_time: None,
+                    is_swap_x2y: None
                 }
             }
             PairEvent::BurnPairEvent(burn) => {
@@ -122,22 +130,22 @@ impl From<PairEvent> for Event {
                     to_account: Some(hex::encode(burn.to.as_bytes())),
                     amount_x: Some(Decimal::from_str(&burn.amount0.to_string()).unwrap()),
                     amount_y: Some(Decimal::from_str(&burn.amount1.to_string()).unwrap()),
-                    event_time: None
+                    event_time: None,
+                    is_swap_x2y: None
                 }
             }
             PairEvent::SwapPairEvent(swap) => {
-                let amount_x;
-                let amount_y;
-
-                if swap.amount0in == Uint::zero() {
+                let (amount_x,amount_y,is_swap_x2y) = if swap.amount0in == Uint::zero() {
                     //y->x
-                    amount_x = Decimal::from_str(&swap.amount0out.to_string()).unwrap();
-                    amount_y = Decimal::from_str(&swap.amount1in.to_string()).unwrap();
+                    (Decimal::from_str(&swap.amount0out.to_string()).unwrap(),
+                    Decimal::from_str(&swap.amount1in.to_string()).unwrap(),
+                    false)
                 } else {
                     //x->y
-                    amount_x = Decimal::from_str(&swap.amount0in.to_string()).unwrap();
-                    amount_y = Decimal::from_str(&swap.amount1out.to_string()).unwrap();
-                }
+                    (Decimal::from_str(&swap.amount0in.to_string()).unwrap(),
+                    Decimal::from_str(&swap.amount1out.to_string()).unwrap(),
+                    true)
+                };
                 Self {
                     tx_hash: hex::encode(swap.meta.tx_hash.as_bytes()),
                     event_type: 3,
@@ -146,7 +154,8 @@ impl From<PairEvent> for Event {
                     to_account: Some(hex::encode(swap.to.as_bytes())),
                     amount_x: Some(amount_x),
                     amount_y: Some(amount_y),
-                    event_time: None
+                    event_time: None,
+                    is_swap_x2y: Some(is_swap_x2y)
                 }
             }
             PairEvent::SyncPairEvent(sync) => {
@@ -159,7 +168,8 @@ impl From<PairEvent> for Event {
                     to_account: None,
                     amount_x: Some(Decimal::from_str(&sync.reserve0.to_string()).unwrap()),
                     amount_y: Some(Decimal::from_str(&sync.reserve1.to_string()).unwrap()),
-                    event_time: None
+                    event_time: None,
+                    is_swap_x2y: None
                 }
             }
         }

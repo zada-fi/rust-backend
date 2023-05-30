@@ -4,7 +4,22 @@ use crate::db;
 use crate::route::{BackendResponse, DataWithPageCount};
 use crate::route::err::BackendError;
 use qstring::QString;
+use crate::watcher::event::EventType;
+use rbatis::rbdc::decimal::Decimal;
+use std::str::FromStr;
+use rbatis::rbdc::datetime::DateTime;
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct RespEventInfo {
+    pub pair_name: String,
+    pub pair_address: String,
+    pub op_type: String,
+    pub user_address: String,
+    pub token_x_amount: String,
+    pub token_y_amount: String,
+    pub event_time: String,
+    pub is_swap_x2y: Option<bool>,
+}
 pub async fn get_all_transactions(
     data: web::Data<AppState>,
     req: HttpRequest,
@@ -13,14 +28,25 @@ pub async fn get_all_transactions(
     let query_str = req.query_string();
     let qs = QString::from(query_str);
     let pg_no = qs.get("pg_no").unwrap_or("0").parse::<i32>().unwrap();
+    let zero_decimal = Decimal::from_str("0").unwrap();
     match db::get_events_by_page_number(&rb,pg_no).await {
         Ok((page_count,txs)) => {
+            let ret = txs.iter().map(|t| RespEventInfo {
+                pair_name: format!("{:?}-{:?}",t.token_y_symbol,t.token_y_symbol),
+                pair_address: t.event.pair_address.clone(),
+                op_type: EventType::from_u8(t.event.event_type as u8).get_name(),
+                user_address: t.event.from_account.clone().unwrap_or_default(),
+                token_x_amount: t.event.amount_x.clone().unwrap_or(zero_decimal.clone()).clone().0.to_string(),
+                token_y_amount: t.event.amount_y.clone().unwrap_or(zero_decimal.clone()).0.to_string(),
+                event_time: t.event.event_time.clone().unwrap_or(DateTime::from_timestamp(0)).to_string(),
+                is_swap_x2y: t.event.is_swap_x2y,
+            }).collect::<Vec<_>>();
             let resp = BackendResponse {
                 code: BackendError::Ok,
                 error: None,
                 data: Some(DataWithPageCount {
                     page_count,
-                    data: Some(txs)})
+                    data: Some((page_count,ret))})
             };
             Ok(HttpResponse::Ok().json(resp))
         },
