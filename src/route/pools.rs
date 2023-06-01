@@ -27,7 +27,7 @@ pub async fn get_all_pools(
         Ok(pools) => {
             let resp_pools = pools.1.iter().map(|p| {
                 RespPoolInfo {
-                    pair_name: format!("{:?}-{:?}",p.token_x_symbol.clone(),p.token_y_symbol.clone()),
+                    pair_name: format!("{}-{}",p.token_x_symbol.clone(),p.token_y_symbol.clone()),
                     pair_address: p.pair_address.clone(),
                     token_x_address: p.token_x_address.clone(),
                     token_y_address: p.token_y_address.clone(),

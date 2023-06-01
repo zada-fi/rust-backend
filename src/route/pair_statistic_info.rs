@@ -24,7 +24,7 @@ pub async fn get_pair_statistic_info(
     match db::get_pools_stat_info_by_page_number(&rb,pg_no).await {
         Ok(pools) => {
             let ret = pools.1.iter().map(|p| PairStatInfo {
-                pair_name: format!("{:?}-{:?}",p.token_x_symbol,p.token_y_symbol),
+                pair_name: format!("{}-{}",p.token_x_symbol,p.token_y_symbol),
                 pair_address: p.pair_address.clone(),
                 usd_volume: p.usd_volume.0.to_string(),
                 usd_volume_week: p.usd_volume_week.0.to_string(),
@@ -38,7 +38,7 @@ pub async fn get_pair_statistic_info(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            log::warn!("get_pools_stat_info from db failed,{:?}",e);
+            println!("get_pools_stat_info from db failed,{:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
                 error: Some("get_pools_stat_info failed".to_string()),

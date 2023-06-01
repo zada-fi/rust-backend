@@ -442,20 +442,20 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
         .await?;
     let mut ret = Vec::new();
     for stat_info in pools_stat_info_day {
-        let pool_week_volume: HashMap<String, Decimal> = rb
-            .query_decode("select max(pair_address),sum(usd_volume) from event_stats where \
-            pair_address = ? and stat_date > current_date - interval '7 days'",
+        let pool_week_volume: HashMap<String,Decimal> = rb
+            .query_decode("select coalesce(sum(usd_volume),0) as total_usd_volume from event_stats where \
+            pair_address = ? and stat_date > current_date - interval '7 days' limit 1",
                           vec![rbs::to_value!(stat_info.pair_address.clone())])
             .await?;
-            let pair_stat_info = PairStatInfo {
-                usd_volume_week:pool_week_volume.get(&stat_info.pair_address).unwrap().clone(),
-                ..stat_info
-            };
+        let pair_stat_info = PairStatInfo {
+            usd_volume_week:pool_week_volume.get(&"total_usd_volume".to_string()).unwrap().clone(),
+            ..stat_info
+        };
         ret.push(pair_stat_info);
     }
     let quo = ret.len() / PAGE_SIZE as usize;
     let pg_count = if ret.len() % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
-    Ok((pg_count,ret))
+    Ok((1,ret))
 }
 
 pub async fn get_all_tvls_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal)>> {
