@@ -35,7 +35,7 @@ impl BackendConfig {
             .parse::<u32>().unwrap_or(600u32);
         let sync_start_block = env::var("SYNC_START_BLOCK").unwrap_or_default()
             .parse::<u64>().unwrap_or(0u64);
-        let stat_start_date = env::var("SYNC_START_BLOCK").unwrap_or_default();
+        let stat_start_date = env::var("SYNC_START_DATE").unwrap_or_default();
         Self {
             server_port,
             database_url,

@@ -154,11 +154,11 @@ pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Vec<Token>
 }
 pub async fn get_token_decimals_in_pool(rb:&Rbatis,pair_address: String ) -> anyhow::Result<(i8,i8)> {
     let x_decimals: i8 = rb
-        .query_decode("select t.decimals from tokens t,pools p where p.pair_address = ? \
+        .query_decode("select t.decimals from tokens t,pool_info p where p.pair_address = ? \
         and p.token_x_address = t.address",vec![rbs::to_value!(pair_address.clone())])
         .await?;
     let y_decimals: i8 = rb
-        .query_decode("select t.decimals from tokens t,pools p where p.pair_address = ? \
+        .query_decode("select t.decimals from tokens t,pool_info p where p.pair_address = ? \
         and p.token_y_address = t.address",vec![rbs::to_value!(pair_address)])
         .await?;
     Ok((x_decimals,y_decimals))
