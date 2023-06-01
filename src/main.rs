@@ -65,6 +65,10 @@ async fn main() -> std::io::Result<()> {
             if e.is_panic() { log::error!("The one of tickprice actors unexpectedly panic:{}", e) }
             log::error!("Tickprice actors aren't supposed to finish any of their execution")
         },
+        Err(e) = summary_handler => {
+            if e.is_panic() { log::error!("The one of tickprice actors unexpectedly panic:{}", e) }
+            log::error!("Tickprice actors aren't supposed to finish any of their execution")
+        },
         _ = async { stop_signal_receiver.next().await } => {
             log::warn!("Stop signal received, shutting down");
         }
