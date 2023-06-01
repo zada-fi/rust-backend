@@ -9,6 +9,7 @@ use tokio::task::JoinHandle;
 use crate::db::tables::EventStat;
 use rbatis::rbdc::date::Date;
 use crate::db_decimal_to_big;
+use num::BigUint;
 
 pub struct TickSummaryTask {
     pub db: rbatis::Rbatis,
@@ -40,12 +41,14 @@ impl TickSummaryTask {
             for (tvl,volume) in tvls.iter().zip(volumes) {
                 let (price,x_price) = db::get_pool_usd_price(&self.db,tvl.pair_address.clone()).await.unwrap_or_default();
                 let (x_decimals,y_decimals) = db::get_token_decimals_in_pool(&self.db,tvl.pair_address.clone()).await?;
+                let x_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(x_decimals as u32).to_string()).unwrap();
+                let y_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(y_decimals as u32).to_string()).unwrap();
                 let (usd_tvl,usd_volume) = if x_price {
-                    (price.clone() * db_decimal_to_big!(tvl.amount_x.0) / BigDecimal::from(x_decimals),
-                     price.clone() * db_decimal_to_big!(volume.amount_x.0) / BigDecimal::from(x_decimals))
+                    (price.clone() * db_decimal_to_big!(tvl.amount_x.0) / x_pow_decimals.clone(),
+                     price.clone() * db_decimal_to_big!(volume.amount_x.0) / x_pow_decimals)
                 } else {
-                    (price.clone() * db_decimal_to_big!(tvl.amount_y.0) / BigDecimal::from(y_decimals),
-                     price.clone() * db_decimal_to_big!(volume.amount_y.0) / BigDecimal::from(y_decimals))
+                    (price.clone() * db_decimal_to_big!(tvl.amount_y.0) / y_pow_decimals.clone(),
+                     price.clone() * db_decimal_to_big!(volume.amount_y.0) / y_pow_decimals)
                 };
 
                 println!("pool {:?} tvl : {:?},volume: {:?}",tvl.pair_address.clone(),usd_tvl,usd_volume);
@@ -56,8 +59,8 @@ impl TickSummaryTask {
                     y_reserves: tvl.amount_y.clone(),
                     x_volume: volume.amount_x,
                     y_volume: volume.amount_y,
-                    usd_tvl:Decimal::from_str(&usd_tvl.to_string()).unwrap(),
-                    usd_volume: Decimal::from_str(&usd_volume.to_string()).unwrap(),
+                    usd_tvl:Decimal::from_str(&format!("{:.18}",usd_tvl)).unwrap(),
+                    usd_volume: Decimal::from_str(&format!("{:.18}",usd_volume)).unwrap(),
                 };
                 stats.push(stat);
 
