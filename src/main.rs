@@ -9,6 +9,7 @@ use futures::SinkExt;
 use futures::StreamExt;
 use crate::watcher::watch::run_watcher;
 use crate::token_price::run_tick_price;
+use crate::summary::run_tick_summary;
 
 pub mod config;
 pub mod watcher;
@@ -41,7 +42,8 @@ async fn main() -> std::io::Result<()> {
     };
     server::run_server(app_state).await;
     let watcher_handler = run_watcher(config.clone(),db.clone()).await;
-    let tick_price_handler = run_tick_price(config, db).await;
+    let tick_price_handler = run_tick_price(config.clone(), db.clone()).await;
+    let summary_handler = run_tick_summary(db,config).await;
 
     // handle ctrl+c
     let (stop_signal_sender, mut stop_signal_receiver) = mpsc::channel(256);

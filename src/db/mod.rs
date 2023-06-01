@@ -443,8 +443,8 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
     let mut ret = Vec::new();
     for stat_info in pools_stat_info_day {
         let pool_week_volume: (String, Decimal) = rb
-            .query_decode("select pair_address,sum(usd_volume) from event_stats where \
-            pair_address = ? and s.stat_date > current_date - interval '7 days'",
+            .query_decode("select max(pair_address),sum(usd_volume) from event_stats where \
+            pair_address = ? and stat_date > current_date - interval '7 days'",
                           vec![rbs::to_value!(stat_info.pair_address.clone())])
             .await?;
             let pair_stat_info = PairStatInfo {

@@ -32,7 +32,7 @@ pub async fn get_all_transactions(
     match db::get_events_by_page_number(&rb,pg_no).await {
         Ok((page_count,txs)) => {
             let ret = txs.iter().map(|t| RespEventInfo {
-                pair_name: format!("{:?}-{:?}",t.token_y_symbol,t.token_y_symbol),
+                pair_name: format!("{:?}-{:?}",t.token_x_symbol,t.token_y_symbol),
                 pair_address: t.pair_address.clone(),
                 op_type: EventType::from_u8(t.event_type as u8).get_name(),
                 user_address: t.from_account.clone().unwrap_or_default(),
