@@ -30,7 +30,15 @@ pub struct Event {
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct EventInfo {
-    pub event: Event,
+    pub tx_hash: String,
+    pub event_type: i8, //1:add_liq,2:swap,3:rm_liq
+    pub pair_address: String,
+    pub from_account: Option<String>,
+    pub to_account: Option<String>,
+    pub amount_x: Option<Decimal>,
+    pub amount_y: Option<Decimal>,
+    pub event_time: Option<DateTime>,
+    pub is_swap_x2y: Option<bool>,
     pub token_x_symbol: String,
     pub token_y_symbol: String,
 }
