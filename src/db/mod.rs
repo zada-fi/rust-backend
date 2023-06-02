@@ -455,20 +455,24 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
     }
     let quo = ret.len() / PAGE_SIZE as usize;
     let pg_count = if ret.len() % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
-    Ok((1,ret))
+    Ok((pg_count,ret))
 }
 
 pub async fn get_all_tvls_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal)>> {
-    let all_tvls: Vec<(Date,Decimal)> = rb
-        .query_decode("select stat_date,sum(usd_tvl) as total_tvl from event_stats \
+    let all_tvls: Vec<(Date,HashMap<String,Decimal>)> = rb
+        .query_decode("select stat_date,coalesce(sum(usd_tvl),0) as total_tvl from event_stats \
         group by stat_date order by stat_date desc", vec![]).await?;
-    Ok(all_tvls)
+    let ret = all_tvls.iter().map(|t| (t.0.clone(),t.1.get(&"total_tvl".to_string()).unwrap().clone()))
+        .collect::<Vec<_>>();
+    Ok(ret)
 }
 pub async fn get_all_volumes_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal)>> {
-    let all_volumes: Vec<(Date,Decimal)> = rb
-        .query_decode("select stat_date,sum(usd_volume) as total_volume from event_stats \
+    let all_volumes: Vec<(Date,HashMap<String,Decimal>)> = rb
+        .query_decode("select stat_date,coalesce(sum(usd_volume),0) as total_volume from event_stats \
         group by stat_date order by stat_date desc", vec![]).await?;
-    Ok(all_volumes)
+    let ret = all_volumes.iter().map(|t| (t.0.clone(),t.1.get(&"total_volume".to_string()).unwrap().clone()))
+        .collect::<Vec<_>>();
+    Ok(ret)
 }
 #[cfg(test)]
 mod test {
