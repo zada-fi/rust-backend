@@ -38,7 +38,7 @@ pub async fn get_all_transactions(
                 user_address: t.from_account.clone().unwrap_or_default(),
                 token_x_amount: t.amount_x.clone().unwrap_or(zero_decimal.clone()).clone().0.to_string(),
                 token_y_amount: t.amount_y.clone().unwrap_or(zero_decimal.clone()).0.to_string(),
-                event_time: t.event_time.clone().unwrap_or(DateTime::from_timestamp(0)).to_string(),
+                event_time: t.event_time.clone().unwrap_or(DateTime::from_timestamp(0)).0.to_string(),
                 is_swap_x2y: t.is_swap_x2y,
             }).collect::<Vec<_>>();
             let resp = BackendResponse {

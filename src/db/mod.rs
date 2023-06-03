@@ -70,8 +70,10 @@ pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow:
         order by e.id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
-    let quo = events.len() / PAGE_SIZE as usize;
-    let pg_count = if events.len() % PAGE_SIZE as usize> 0 { quo + 1 } else { quo } ;
+    let events_count: usize = rb
+        .query_decode("select count(1) from events where event_type != 4",vec![]).await?;
+    let quo = events_count / PAGE_SIZE as usize;
+    let pg_count = if events_count % PAGE_SIZE as usize> 0 { quo + 1 } else { quo } ;
     Ok((pg_count,events))
 }
 pub(crate) async fn get_events_without_time(rb: &Rbatis) -> anyhow::Result<Vec<EventHash>> {
@@ -141,8 +143,10 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(
         .query_decode("select * from pool_info order by id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
-    let quo = pools.len() / PAGE_SIZE as usize;
-    let pg_count = if pools.len() % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
+    let pools_count: usize = rb
+        .query_decode("select count(1) from pool_info",vec![]).await?;
+    let quo = pools_count / PAGE_SIZE as usize;
+    let pg_count = if pools_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
     Ok((pg_count,pools))
 }
 
@@ -453,27 +457,29 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
         };
         ret.push(pair_stat_info);
     }
-    let quo = ret.len() / PAGE_SIZE as usize;
-    let pg_count = if ret.len() % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
+    let pools_count: usize = rb
+        .query_decode("select count(1) from pool_info",vec![]).await?;
+    let quo = pools_count / PAGE_SIZE as usize;
+    let pg_count = if pools_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
     Ok((pg_count,ret))
 }
 
-pub async fn get_all_tvls_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal)>> {
+pub async fn get_all_tvls_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,Decimal)>> {
     let all_tvls:Vec<HashMap<String,String>> = rb
         .query_decode("select stat_date,coalesce(sum(usd_tvl),0) as total_tvl from event_stats \
         group by stat_date order by stat_date desc", vec![]).await?;
     let ret = all_tvls.iter().map(|t|
-        (Date::from_str(t.get(&"stat_date".to_string()).unwrap()).unwrap(),
+        (t.get(&"stat_date".to_string()).unwrap().clone(),
         Decimal::from_str(t.get(&"total_tvl".to_string()).unwrap()).unwrap()
         )).collect::<Vec<_>>();
     Ok(ret)
 }
-pub async fn get_all_volumes_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(Date,Decimal)>> {
+pub async fn get_all_volumes_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,Decimal)>> {
     let all_volumes: Vec<HashMap<String,String>> = rb
         .query_decode("select stat_date,coalesce(sum(usd_volume),0) as total_volume from event_stats \
         group by stat_date order by stat_date desc", vec![]).await?;
     let ret = all_volumes.iter().map(|t|
-        (Date::from_str(t.get(&"stat_date".to_string()).unwrap()).unwrap(),
+        (t.get(&"stat_date".to_string()).unwrap().clone(),
          Decimal::from_str(t.get(&"total_volume".to_string()).unwrap()).unwrap()
         )).collect::<Vec<_>>();
     Ok(ret)
