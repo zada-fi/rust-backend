@@ -12,6 +12,7 @@ use rbatis::rbdc::datetime::DateTime;
 use rbatis::rbdc::date::Date;
 use chrono::{Utc, NaiveDate, Days};
 use anyhow::format_err;
+use itertools::Itertools;
 
 pub(crate) mod tables;
 const PAGE_SIZE:i32 = 10;
@@ -128,16 +129,6 @@ pub async fn get_all_store_pools(rb:&Rbatis ) -> anyhow::Result<Vec<PoolInfo>> {
     Ok(pools)
 }
 pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<PoolInfo>)> {
-    // let pools_count: i32 = rb
-    //     .query_decode("select count(1) from pool_info",vec![])
-    //     .await?;
-    // let page_count = if pools_count % PAGE_SIZE > 0 {
-    //     pools_count/PAGE_SIZE + 1
-    // } else {
-    //     pools_count/PAGE_SIZE
-    // };
-    //
-    // if pg_no > page_count { return Ok(vec![]);}
     let offset = (pg_no - 1) * PAGE_SIZE;
     let pools: Vec<PoolInfo> = rb
         .query_decode("select * from pool_info order by id desc offset ? limit ? ",
@@ -147,7 +138,31 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(
         .query_decode("select count(1) from pool_info",vec![]).await?;
     let quo = pools_count / PAGE_SIZE as usize;
     let pg_count = if pools_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
-    Ok((pg_count,pools))
+    let mut token_decimals = HashMap::new();
+    let mut x_tokens = pools.iter().map(|p| p.token_x_address.clone()).collect::<Vec<_>>();
+    let mut y_tokens = pools.iter().map(|p| p.token_y_address.clone()).collect::<Vec<_>>();
+    x_tokens.append(&mut y_tokens);
+    x_tokens.sort_unstable();
+    x_tokens.dedup();
+    for t in x_tokens {
+        let decimals: i8 = rb
+            .query_decode("select decimals from tokens where address = ?",vec![rbs::to_value!(t.clone())]).await?;
+        token_decimals.insert(t,decimals);
+    }
+    let ret = pools.iter().map(|p| {
+        let x_decimals = *token_decimals.get(&p.token_x_address).unwrap() as u8;
+        let y_decimals = *token_decimals.get(&p.token_y_address).unwrap() as u8;
+        let x_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(x_decimals as u32).to_string()).unwrap();
+        let y_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(y_decimals as u32).to_string()).unwrap();
+        let x_reserves = db_decimal_to_big!(p.token_x_reserves.0) / x_pow_decimals.clone();
+        let y_reserves = db_decimal_to_big!(p.token_y_reserves.0) / y_pow_decimals.clone();
+        PoolInfo {
+            token_x_reserves: Decimal::from_str(&x_reserves.to_string()).unwrap(),
+            token_y_reserves: Decimal::from_str(&y_reserves.to_string()).unwrap(),
+            ..p.clone()
+        }
+    }).collect::<Vec<_>>();
+    Ok((pg_count,ret))
 }
 
 pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Vec<Token>> {
