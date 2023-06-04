@@ -157,8 +157,8 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(
         let x_reserves = db_decimal_to_big!(p.token_x_reserves.0) / x_pow_decimals.clone();
         let y_reserves = db_decimal_to_big!(p.token_y_reserves.0) / y_pow_decimals.clone();
         PoolInfo {
-            token_x_reserves: Decimal::from_str(&x_reserves.to_string()).unwrap(),
-            token_y_reserves: Decimal::from_str(&y_reserves.to_string()).unwrap(),
+            token_x_reserves: Decimal::from_str(&format!("{:.8}",x_reserves)).unwrap(),
+            token_y_reserves: Decimal::from_str(&format!("{:.8}",y_reserves)).unwrap(),
             ..p.clone()
         }
     }).collect::<Vec<_>>();
