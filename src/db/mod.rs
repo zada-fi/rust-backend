@@ -91,7 +91,7 @@ pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Resu
 pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow::Result<(usize,Vec<EventInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let events: Vec<EventInfo> = rb
-        .query_decode("select e.*,t1.symbol as token_x_symbol,t2.symbol as token_y_symbol,t1 \
+        .query_decode("select e.*,t1.symbol as token_x_symbol,t2.symbol as token_y_symbol, \
         t1.decimals as token_x_decimals,t2.decimals as token_y_decimals from events e,pool_info p,\
         tokens t1,tokens t2 where \
         e.event_type != 4 and e.pair_address = p.pair_address and p.token_x_address = t1.address and \
