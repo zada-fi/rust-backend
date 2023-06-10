@@ -12,7 +12,6 @@ use rbatis::rbdc::datetime::DateTime;
 use rbatis::rbdc::date::Date;
 use chrono::{Utc, NaiveDate, Days};
 use anyhow::format_err;
-use itertools::Itertools;
 
 pub(crate) mod tables;
 const PAGE_SIZE:i32 = 10;
@@ -23,6 +22,33 @@ macro_rules! db_decimal_to_big {
     };
 }
 
+pub fn get_trim_decimals(number: BigDecimal) -> Decimal {
+    let tmp = format!("{:.8}",number);
+    let arry = tmp.as_bytes();
+    let mut zero_len = 0;
+    let str_len = arry.len();
+    for i in 0..str_len {
+        let r = str_len - i -1;
+        if arry[r] == '.' as u8 {
+            zero_len += 1;
+            break;
+        } else if arry[r] != '0' as u8 {
+            break;
+        } else {
+            zero_len += 1;
+        }
+    }
+    Decimal::from_str(&tmp[..str_len-zero_len].to_string()).unwrap()
+}
+pub fn get_db_trim_decimals(number: Decimal) -> Decimal {
+    let num = BigDecimal::from_str(&number.0.to_string()).unwrap();
+    get_trim_decimals(num)
+}
+pub fn get_real_amount(decimals: u8,amount: BigDecimal) ->Decimal {
+        let pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(decimals as u32).to_string()).unwrap();
+        let real_amount = amount / pow_decimals;
+        get_trim_decimals(real_amount)
+}
 pub(crate) async fn upsert_last_sync_block(rb: &mut Rbatis, new_block : i64) -> anyhow::Result<()> {
     let block = LastSyncBlock::select_all(rb).await?;
     if block.is_empty() {
@@ -65,7 +91,9 @@ pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Resu
 pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow::Result<(usize,Vec<EventInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let events: Vec<EventInfo> = rb
-        .query_decode("select e.*,t1.symbol as token_x_symbol,t2.symbol as token_y_symbol from events e,pool_info p,tokens t1,tokens t2 where \
+        .query_decode("select e.*,t1.symbol as token_x_symbol,t2.symbol as token_y_symbol,t1 \
+        t1.decimals as token_x_decimals,t2.decimals as token_y_decimals from events e,pool_info p,\
+        tokens t1,tokens t2 where \
         e.event_type != 4 and e.pair_address = p.pair_address and p.token_x_address = t1.address and \
         p.token_y_address = t2.address \
         order by e.id desc offset ? limit ? ",
@@ -152,13 +180,11 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(
     let ret = pools.iter().map(|p| {
         let x_decimals = *token_decimals.get(&p.token_x_address).unwrap() as u8;
         let y_decimals = *token_decimals.get(&p.token_y_address).unwrap() as u8;
-        let x_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(x_decimals as u32).to_string()).unwrap();
-        let y_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(y_decimals as u32).to_string()).unwrap();
-        let x_reserves = db_decimal_to_big!(p.token_x_reserves.0) / x_pow_decimals.clone();
-        let y_reserves = db_decimal_to_big!(p.token_y_reserves.0) / y_pow_decimals.clone();
+        let x_reserves = db_decimal_to_big!(p.token_x_reserves.0);
+        let y_reserves = db_decimal_to_big!(p.token_y_reserves.0);
         PoolInfo {
-            token_x_reserves: Decimal::from_str(&format!("{:.8}",x_reserves)).unwrap(),
-            token_y_reserves: Decimal::from_str(&format!("{:.8}",y_reserves)).unwrap(),
+            token_x_reserves: get_real_amount(x_decimals,x_reserves),
+            token_y_reserves: get_real_amount(y_decimals,y_reserves),
             ..p.clone()
         }
     }).collect::<Vec<_>>();
@@ -457,7 +483,7 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
         coalesce(s.usd_tvl,0) as usd_tvl,coalesce(s.usd_volume,0) as usd_volume,\
         coalesce(s.usd_volume,0) as usd_volume_week from \
         pool_info p left join event_stats s on p.pair_address = s.pair_address \
-        order by s.usd_tvl desc offset ? limit ?", vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
+        where s.usd_tvl is not null order by s.usd_tvl desc offset ? limit ?", vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
     let mut ret = Vec::new();
     for stat_info in pools_stat_info_day {

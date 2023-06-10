@@ -41,6 +41,8 @@ pub struct EventInfo {
     pub is_swap_x2y: Option<bool>,
     pub token_x_symbol: String,
     pub token_y_symbol: String,
+    pub token_x_decimals: i8,
+    pub token_y_decimals: i8,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct EventStat {

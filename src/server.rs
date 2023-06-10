@@ -31,8 +31,7 @@ pub async fn run_rpc_server(app_state: AppState) {
     let bind_to = SocketAddr::new("0.0.0.0".parse().unwrap(),
                                   app_state.config.server_port as u16);
     HttpServer::new(move || {
-        let mut cors = Cors::default();
-        cors = Cors::permissive();
+        let cors = Cors::permissive();
         App::new()
             .wrap(cors)
             .app_data(web::Data::new(app_state.clone()))
