@@ -41,9 +41,9 @@ async fn main() -> std::io::Result<()> {
         db: db.clone()
     };
     server::run_server(app_state).await;
-    // let watcher_handler = run_watcher(config.clone(),db.clone()).await;
-    // let tick_price_handler = run_tick_price(config.clone(), db.clone()).await;
-    // let summary_handler = run_tick_summary(db,config).await;
+    let watcher_handler = run_watcher(config.clone(),db.clone()).await;
+    let tick_price_handler = run_tick_price(config.clone(), db.clone()).await;
+    let summary_handler = run_tick_summary(db,config).await;
 
     // handle ctrl+c
     let (stop_signal_sender, mut stop_signal_receiver) = mpsc::channel(256);
@@ -57,18 +57,18 @@ async fn main() -> std::io::Result<()> {
     }
 
     tokio::select! {
-        // Err(e) = watcher_handler => {
-        //     if e.is_panic() { log::error!("The one of watcher actors unexpectedly panic:{}", e) }
-        //     log::error!("Watchers actors aren't supposed to finish any of their execution")
-        // },
-        // Err(e) = tick_price_handler => {
-        //     if e.is_panic() { log::error!("The one of tickprice actors unexpectedly panic:{}", e) }
-        //     log::error!("Tickprice actors aren't supposed to finish any of their execution")
-        // },
-        // Err(e) = summary_handler => {
-        //     if e.is_panic() { log::error!("The one of tickprice actors unexpectedly panic:{}", e) }
-        //     log::error!("Tickprice actors aren't supposed to finish any of their execution")
-        // },
+        Err(e) = watcher_handler => {
+            if e.is_panic() { log::error!("The one of watcher actors unexpectedly panic:{}", e) }
+            log::error!("Watchers actors aren't supposed to finish any of their execution")
+        },
+        Err(e) = tick_price_handler => {
+            if e.is_panic() { log::error!("The one of tickprice actors unexpectedly panic:{}", e) }
+            log::error!("Tickprice actors aren't supposed to finish any of their execution")
+        },
+        Err(e) = summary_handler => {
+            if e.is_panic() { log::error!("The one of tickprice actors unexpectedly panic:{}", e) }
+            log::error!("Tickprice actors aren't supposed to finish any of their execution")
+        },
         _ = async { stop_signal_receiver.next().await } => {
             log::warn!("Stop signal received, shutting down");
         }

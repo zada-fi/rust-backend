@@ -95,7 +95,7 @@ pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow:
         t1.decimals as token_x_decimals,t2.decimals as token_y_decimals from events e,pool_info p,\
         tokens t1,tokens t2 where \
         e.event_type != 4 and e.pair_address = p.pair_address and p.token_x_address = t1.address and \
-        p.token_y_address = t2.address \
+        p.token_y_address = t2.address and e.event_time is not null \
         order by e.id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
@@ -487,6 +487,11 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
         .await?;
     let mut ret = Vec::new();
     for stat_info in pools_stat_info_day {
+        let pool_day_volume: HashMap<String,Decimal> = rb
+            .query_decode("select coalesce(sum(usd_volume),0) as total_usd_volume from event_stats where \
+            pair_address = ? and stat_date > current_date - interval '1 days' limit 1",
+                          vec![rbs::to_value!(stat_info.pair_address.clone())])
+            .await?;
         let pool_week_volume: HashMap<String,Decimal> = rb
             .query_decode("select coalesce(sum(usd_volume),0) as total_usd_volume from event_stats where \
             pair_address = ? and stat_date > current_date - interval '7 days' limit 1",
@@ -494,6 +499,7 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
             .await?;
         let pair_stat_info = PairStatInfo {
             usd_volume_week:pool_week_volume.get(&"total_usd_volume".to_string()).unwrap().clone(),
+            usd_volume: pool_day_volume.get(&"total_usd_volume".to_string()).unwrap().clone(),
             ..stat_info
         };
         ret.push(pair_stat_info);
