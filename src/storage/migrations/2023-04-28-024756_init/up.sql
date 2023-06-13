@@ -10,7 +10,7 @@ CREATE TABLE events (
      amount_x numeric , -- while swap if x->y :x>0&&y==0 else y>0 && x==0;while add_liq x,y > 0
      amount_y numeric,
      event_time timestamp with time zone,
-     is_swap_x_y bool,
+     is_swap_x2y bool,
      PRIMARY KEY (id)
 );
 
