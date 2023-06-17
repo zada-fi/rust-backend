@@ -38,7 +38,11 @@ pub async fn get_all_transactions(
                 pair_name: format!("{}-{}",t.token_x_symbol,t.token_y_symbol),
                 pair_address: t.pair_address.clone(),
                 op_type: EventType::from_u8(t.event_type as u8).get_name(),
-                user_address: t.to_account.clone().unwrap_or_default(),
+                user_address: if t.event_type == EventType::AddLiq {
+                    t.from_account.clone().unwrap_or_default()
+                } else {
+                    t.to_account.clone().unwrap_or_default()
+                },
                 token_x_amount: get_real_amount(t.token_x_decimals as u8,db_decimal_to_big!(t.amount_x.clone().unwrap_or(zero_decimal.clone()).0)).0.to_string(),
                 token_y_amount: get_real_amount(t.token_y_decimals as u8,db_decimal_to_big!(t.amount_y.clone().unwrap_or(zero_decimal.clone()).0)).0.to_string(),
                 event_time: t.event_time.clone().unwrap_or(DateTime::from_timestamp(0)).0.to_string(),
