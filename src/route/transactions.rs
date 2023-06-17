@@ -38,7 +38,7 @@ pub async fn get_all_transactions(
                 pair_name: format!("{}-{}",t.token_x_symbol,t.token_y_symbol),
                 pair_address: t.pair_address.clone(),
                 op_type: EventType::from_u8(t.event_type as u8).get_name(),
-                user_address: if t.event_type == EventType::AddLiq {
+                user_address: if t.event_type == EventType::AddLiq as i8 {
                     t.from_account.clone().unwrap_or_default()
                 } else {
                     t.to_account.clone().unwrap_or_default()
