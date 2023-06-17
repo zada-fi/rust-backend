@@ -248,7 +248,7 @@ impl TryFrom<Log> for PairEvent {
                     amount1in: dec_ev[1].clone().into_uint().unwrap(),
                     amount0out: dec_ev[2].clone().into_uint().unwrap(),
                     amount1out: dec_ev[3].clone().into_uint().unwrap(),
-                    to: H160::from_slice(&event.topics[1].as_bytes()[12..])
+                    to: H160::from_slice(&event.topics[2].as_bytes()[12..])
                 })
             },
             EventType::Sync => {

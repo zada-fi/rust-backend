@@ -107,7 +107,7 @@ pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow:
 }
 pub(crate) async fn get_events_without_time(rb: &Rbatis) -> anyhow::Result<Vec<EventHash>> {
     let events: Vec<EventHash> = rb
-        .query_decode("select * from events where event_time is null order by id asc limit 10",
+        .query_decode("select id,tx_hash,event_type from events where event_time is null order by id asc limit 10",
                       vec![])
         .await?;
     Ok(events)
@@ -243,6 +243,19 @@ pub(crate) async fn update_events_timestamp(rb: &mut Rbatis, timestamps: Vec<(i6
     for (id,event_time) in timestamps {
         tx.exec("update events set event_time = ? where id = ?",
                 vec![rbs::to_value!(DateTime::from_timestamp(event_time as i64)), rbs::to_value!(id)])
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+pub(crate) async fn update_from_of_add_liq_events(rb: &mut Rbatis, from_address: Vec<(i64,String)>) -> anyhow::Result<()> {
+    let mut tx = rb
+        .acquire_begin()
+        .await?;
+
+    for (id,from_address) in from_address {
+        tx.exec("update events set from_account = ? where id = ?",
+                vec![rbs::to_value!(from_address), rbs::to_value!(id)])
             .await?;
     }
     tx.commit().await?;

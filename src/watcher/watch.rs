@@ -18,7 +18,7 @@ use anyhow::format_err;
 use web3::contract::{Contract, Options};
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
-use crate::watcher::event::{ PairCreatedEvent, PairEvent};
+use crate::watcher::event::{ PairCreatedEvent, PairEvent,EventType};
 use crate::token_price::ETH_ADDRESS;
 
 const FACTORY_EVENTS: &str = include_str!("../abi/factory_abi.json");
@@ -196,19 +196,24 @@ impl ChainWatcher {
                 break;
             }
             let mut update_timestamps = Vec::new();
+            let mut add_liq_accounts = Vec::new();
             for event in will_update_events {
                 let hash = H256::from_slice(&hex::decode(&event.tx_hash).unwrap());
                 let tx = self.web3.eth().transaction(hash.into()).await?;
-                let tx_time = if let Some(tx) = tx {
+                let (tx_time,from) = if let Some(tx) = tx {
                     let block = self.web3.eth().block(tx.block_number.unwrap().into()).await?;
                     if let Some(block) = block {
-                        block.timestamp.as_u32() as i32
-                    } else { 0i32 }
-                } else { 0i32 };
+                        (block.timestamp.as_u32() as i32,tx.from.unwrap())
+                    } else { continue; }
+                } else { continue; };
                 println!("block time is {}",tx_time);
+                if event.event_type == EventType::AddLiq as i8 {
+                    add_liq_accounts.push((event.id,hex::encode(from)));
+                }
                 update_timestamps.push((event.id,tx_time));
             }
             db::update_events_timestamp(&mut self.db,update_timestamps).await?;
+            db::update_from_of_add_liq_events(&mut self.db,add_liq_accounts).await?;
         }
         Ok(())
     }

@@ -66,6 +66,7 @@ pub struct EventStatData {
 pub struct EventHash {
     pub id: i64,
     pub tx_hash: String,
+    pub event_type: i8,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PoolInfo {

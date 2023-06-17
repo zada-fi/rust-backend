@@ -39,8 +39,18 @@ impl TickSummaryTask {
             let volumes = db::get_pools_day_volume(&self.db, day.clone()).await?;
             let mut stats = Vec::new();
             for (tvl,volume) in tvls.iter().zip(volumes) {
-                let (price,x_price) = db::get_pool_usd_price(&self.db,tvl.pair_address.clone()).await.unwrap_or_default();
-                let (x_decimals,y_decimals) = db::get_token_decimals_in_pool(&self.db,tvl.pair_address.clone()).await?;
+                let (price,x_price) = if let Ok((p,x)) = db::get_pool_usd_price(
+                    &self.db,tvl.pair_address.clone()).await {
+                    (p,x)
+                } else {
+                    continue;
+                };
+                let (x_decimals,y_decimals) = if let Ok((x,y)) = db::get_token_decimals_in_pool(
+                    &self.db,tvl.pair_address.clone()).await {
+                    (x,y)
+                } else {
+                    continue;
+                };
                 let x_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(x_decimals as u32).to_string()).unwrap();
                 let y_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(y_decimals as u32).to_string()).unwrap();
                 let (usd_tvl,usd_volume) = if x_price {
