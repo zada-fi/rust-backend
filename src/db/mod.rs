@@ -63,12 +63,12 @@ pub(crate) async fn upsert_last_sync_block(rb: &mut Rbatis, new_block : i64) -> 
     Ok(())
 }
 
-pub async fn get_last_sync_block(rb:&Rbatis) -> anyhow::Result<u64> {
+pub async fn get_last_sync_block(rb:&Rbatis,start_block: u64) -> anyhow::Result<u64> {
     let block: Vec<LastSyncBlock> = rb
         .query_decode("select block_number from last_sync_block",vec![])
         .await?;
     let number = if block.is_empty() {
-        0u64
+        start_block
     } else {
         block[0].block_number.to_u64().unwrap()
     };
