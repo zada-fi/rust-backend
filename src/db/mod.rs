@@ -96,11 +96,11 @@ pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow:
         tokens t1,tokens t2 where \
         e.event_type != 4 and e.pair_address = p.pair_address and p.token_x_address = t1.address and \
         p.token_y_address = t2.address and e.event_time is not null \
-        order by e.id desc offset ? limit ? ",
+        order by e.event_time desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
     let events_count: usize = rb
-        .query_decode("select count(1) from events where event_type != 4",vec![]).await?;
+        .query_decode("select count(1) from events where event_type != 4 and event_time is not null",vec![]).await?;
     let quo = events_count / PAGE_SIZE as usize;
     let pg_count = if events_count % PAGE_SIZE as usize> 0 { quo + 1 } else { quo } ;
     Ok((pg_count,events))
@@ -495,7 +495,7 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
         .query_decode("select p.pair_address,p.token_x_symbol,p.token_y_symbol,p.token_x_address,p.token_y_address,\
         coalesce(s.usd_tvl,0) as usd_tvl,coalesce(s.usd_volume,0) as usd_volume,\
         coalesce(s.usd_volume,0) as usd_volume_week from \
-        pool_info p left join event_stats s on p.pair_address = s.pair_address \
+        event_stats s left join pool_info p on p.pair_address = s.pair_address \
         where s.usd_tvl is not null order by s.usd_tvl desc offset ? limit ?", vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
     let mut ret = Vec::new();
@@ -518,7 +518,7 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
         ret.push(pair_stat_info);
     }
     let pools_count: usize = rb
-        .query_decode("select count(1) from pool_info",vec![]).await?;
+        .query_decode("select count(1) from event_stats where s.usd_tvl is not null",vec![]).await?;
     let quo = pools_count / PAGE_SIZE as usize;
     let pg_count = if pools_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
     Ok((pg_count,ret))
