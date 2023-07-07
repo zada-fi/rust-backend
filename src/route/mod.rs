@@ -6,6 +6,7 @@ mod err;
 pub mod transactions;
 pub mod pair_statistic_info;
 pub mod total_tvl;
+pub mod launchpad;
 
 #[derive(Debug, Serialize, Clone,Deserialize)]
 pub struct BackendCommonReq {
@@ -22,3 +23,14 @@ pub struct BackendResponse<T: Clone + Serialize> {
     pub error: Option<String>,
     pub data: Option<T>
 }
+
+
+// #[macro_export]
+// macro_rules! update_project_column {
+//     ($rb:expr,$pj_name:expr, $column_name:expr, $column_value:expr) => {{
+//             $rb.exec(format!("update projects set $column_name = ? \
+//      where project_name = ?",
+//             vec![rbs::to_value!($column_value)])
+//         .await?;
+//     }};
+// }

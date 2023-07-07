@@ -6,10 +6,12 @@ use std::str::FromStr;
 use rbatis::rbdc::decimal::Decimal;
 use crate::config::BackendConfig;
 use tokio::task::JoinHandle;
-use crate::db::tables::EventStat;
+use crate::db::tables::{EventStatData, TvlStat, VolumeStat, HistoryStatInfo};
 use rbatis::rbdc::date::Date;
 use crate::db_decimal_to_big;
 use num::BigUint;
+use std::ops::Add;
+use std::collections::HashMap;
 
 pub struct TickSummaryTask {
     pub db: rbatis::Rbatis,
@@ -32,50 +34,77 @@ impl TickSummaryTask {
             }
         }
     }
+    pub async fn calc_usd_amount(&self,data:&EventStatData)->anyhow::Result<BigDecimal> {
+        let (price,x_price) = db::get_pool_usd_price(
+            &self.db,data.pair_address.clone()).await?;
+        let (x_decimals,y_decimals) = db::get_token_decimals_in_pool(
+            &self.db,data.pair_address.clone()).await?;
+        let x_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(x_decimals as u32).to_string()).unwrap();
+        let y_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(y_decimals as u32).to_string()).unwrap();
+        let usd_amount = if x_price {
+            price.clone() * db_decimal_to_big!(data.amount_x.0) / x_pow_decimals.clone()
+        } else {
+            price.clone() * db_decimal_to_big!(data.amount_y.0) / y_pow_decimals.clone()
+        };
+        Ok(usd_amount)
+    }
     pub async fn statistic_summary(&mut self) ->anyhow::Result<()> {
         let days = db::get_unstated_days(&self.db,&self.config.stat_start_date).await?;
         for day in days {
             let tvls = db::get_pools_day_tvl(&self.db, day.clone()).await?;
             let volumes = db::get_pools_day_volume(&self.db, day.clone()).await?;
-            let mut stats = Vec::new();
-            for (tvl,volume) in tvls.iter().zip(volumes) {
-                let (price,x_price) = if let Ok((p,x)) = db::get_pool_usd_price(
-                    &self.db,tvl.pair_address.clone()).await {
-                    (p,x)
-                } else {
-                    continue;
-                };
-                let (x_decimals,y_decimals) = if let Ok((x,y)) = db::get_token_decimals_in_pool(
-                    &self.db,tvl.pair_address.clone()).await {
-                    (x,y)
-                } else {
-                    continue;
-                };
-                let x_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(x_decimals as u32).to_string()).unwrap();
-                let y_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(y_decimals as u32).to_string()).unwrap();
-                let (usd_tvl,usd_volume) = if x_price {
-                    (price.clone() * db_decimal_to_big!(tvl.amount_x.0) / x_pow_decimals.clone(),
-                     price.clone() * db_decimal_to_big!(volume.amount_x.0) / x_pow_decimals)
-                } else {
-                    (price.clone() * db_decimal_to_big!(tvl.amount_y.0) / y_pow_decimals.clone(),
-                     price.clone() * db_decimal_to_big!(volume.amount_y.0) / y_pow_decimals)
-                };
-
-                println!("pool {:?} tvl : {:?},volume: {:?}",tvl.pair_address.clone(),usd_tvl,usd_volume);
-                let stat = EventStat {
+            let mut tvl_stats = Vec::new();
+            let mut volume_stats = Vec::new();
+            //update tvl on day
+            let pre_tvls = db::get_pools_pre_day_tvl(&self.db,day.clone()).await?;
+            let mut total_volume_by_day = BigDecimal::from(0);
+            let mut total_tvl_by_day = BigDecimal::from(0);
+            for tvl in tvls.iter(){
+                let usd_amount = self.calc_usd_amount(tvl).await?;
+                println!("pool {:?} tvl : {:?} on day {:?}",tvl.pair_address.clone(),usd_amount,day);
+                let stat = TvlStat {
                     pair_address: tvl.pair_address.clone(),
                     stat_date: Date::from_str(&tvl.day).unwrap(),
                     x_reserves: tvl.amount_x.clone(),
                     y_reserves: tvl.amount_y.clone(),
-                    x_volume: volume.amount_x,
-                    y_volume: volume.amount_y,
-                    usd_tvl:Decimal::from_str(&format!("{:.18}",usd_tvl)).unwrap(),
-                    usd_volume: Decimal::from_str(&format!("{:.18}",usd_volume)).unwrap(),
+                    usd_tvl:Decimal::from_str(&format!("{:.18}", usd_amount)).unwrap(),
                 };
-                stats.push(stat);
+                tvl_stats.push(stat);
+                total_tvl_by_day += usd_amount;
+            }
+
+            for tvl in pre_tvls.iter() {
+                if let Some(new_tvl) = tvl_stats.iter().find(|s| s.pair_address == tvl.pair_address) {
+                    continue;
+                } else {
+                    total_tvl_by_day += BigDecimal::from_str(&tvl.usd_tvl.0.to_string()).unwrap();
+                }
+            }
+
+            for volume in volumes.iter(){
+                let usd_amount = self.calc_usd_amount(volume).await?;
+                println!("pool {:?} volume : {:?} on day {:?}",volume.pair_address.clone(),usd_amount,day);
+                let stat = VolumeStat {
+                    pair_address: volume.pair_address.clone(),
+                    stat_date: Date::from_str(&volume.day).unwrap(),
+                    x_volume: volume.amount_x.clone(),
+                    y_volume: volume.amount_y.clone(),
+                    usd_volume: Decimal::from_str(&format!("{:.18}", usd_amount)).unwrap(),
+                };
+                volume_stats.push(stat);
+                total_volume_by_day += usd_amount;
 
             }
-            db::save_day_stats(&mut self.db, stats).await?;
+
+            let history_stat = HistoryStatInfo {
+                stat_date: Date::from_str(&day).unwrap(),
+                usd_tvl: Decimal::from_str(&total_tvl_by_day.to_string()).unwrap(),
+                usd_volume: Decimal::from_str(&total_volume_by_day.to_string()).unwrap(),
+            };
+            db::save_day_tvl_stats(&mut self.db, tvl_stats).await?;
+            db::save_day_volume_stats(&mut self.db, volume_stats).await?;
+            // todo:should save history stats on batch
+            db::save_history_stat(&mut self.db,history_stat).await?;
         }
         Ok(())
     }
@@ -112,6 +141,7 @@ mod test {
             tick_price_time_interval: 0,
             workers_number: 0,
             contract_address: Default::default(),
+            launchpad_address: Default::default(),
             sync_start_block: 0,
             stat_start_date: "2023-03-28".to_string()
         };

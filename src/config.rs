@@ -13,6 +13,7 @@ pub struct BackendConfig {
     pub tick_price_time_interval: u32,
     pub workers_number: u16,
     pub contract_address: H160,
+    pub launchpad_address: H160,
     pub sync_start_block: u64,
     pub stat_start_date: String,
 }
@@ -30,6 +31,7 @@ impl BackendConfig {
         let db_pool_size = env::var("DB_POOL_SIZE").unwrap_or_default()
             .parse::<u16>().unwrap_or(1u16);
         let contract_address = env::var("CONTRACT_ADDRESS").unwrap_or_default();
+        let launchpad_address = env::var("LAUNCHPAD_ADDRESS").unwrap_or_default();
         let coingecko_url = env::var("COINGECKO_URL").unwrap_or_default();
         let tick_price_time_interval = env::var("WATCH_TIME_INTERVAL").unwrap_or_default()
             .parse::<u32>().unwrap_or(600u32);
@@ -47,7 +49,8 @@ impl BackendConfig {
             contract_address: H160::from_slice(&hex::decode(contract_address).unwrap()),
             coingecko_url,
             sync_start_block,
-            stat_start_date
+            stat_start_date,
+            launchpad_address: H160::from_slice(&hex::decode(launchpad_address).unwrap()),
         }
     }
 }

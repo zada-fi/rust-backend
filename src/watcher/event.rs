@@ -61,6 +61,17 @@ pub enum EventType {
     Sync
 }
 
+#[derive(Debug, Clone)]
+pub struct ProjectCreatedEvent {
+    pub project_name: String,
+    pub project_address:Address,
+}
+#[derive(Debug, Clone)]
+pub struct UserInvestEvent {
+    pub meta: EventData,
+    pub user:Address,
+    pub amount:Uint,
+}
 impl PairEvent {
     pub fn get_pair_address(&self) ->Address {
         match self {
@@ -267,5 +278,45 @@ impl TryFrom<Log> for PairEvent {
             },
         };
         Ok(pair_event)
+    }
+}
+
+impl TryFrom<Log> for ProjectCreatedEvent {
+    type Error = ethabi::Error;
+
+    fn try_from(event: Log) -> Result<Self, Self::Error> {
+        let dec_ev = decode(
+            &[
+                ParamType::String,//pair_address
+                ParamType::Address, // all_pairs length
+            ],
+            &event.data.0,
+        )?;
+        Ok(ProjectCreatedEvent {
+            project_name: dec_ev[0].clone().to_string(),
+            project_address: dec_ev[1].clone().into_address().unwrap(),
+        })
+    }
+}
+impl TryFrom<Log> for UserInvestEvent {
+    type Error = ethabi::Error;
+
+    fn try_from(event: Log) -> Result<Self, Self::Error> {
+        let meta = EventData {
+            address: event.address,
+            tx_hash: event.transaction_hash.unwrap_or_default()
+        };
+        let dec_ev = decode(
+            &[
+                ParamType::Address,
+                ParamType::Uint(256),
+            ],
+            &event.data.0,
+        )?;
+        Ok(UserInvestEvent {
+            meta,
+            user: dec_ev[0].clone().into_address().unwrap(),
+            amount: dec_ev[1].clone().into_uint().unwrap(),
+        })
     }
 }

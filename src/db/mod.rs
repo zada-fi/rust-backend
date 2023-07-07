@@ -1,5 +1,5 @@
 use rbatis::Rbatis;
-use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStat, EventStatData, PairStatInfo, EventInfo};
+use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStatData, PairStatInfo, EventInfo, Project, TvlStat, VolumeStat, PairTvlStatInfo, HistoryStatInfo, ProjectAddress, UserInvest, LaunchpadStatInfo};
 use num::{ToPrimitive, BigUint};
 use std::collections::HashMap;
 use crate::watcher::event::PairEvent;
@@ -12,6 +12,7 @@ use rbatis::rbdc::datetime::DateTime;
 use rbatis::rbdc::date::Date;
 use chrono::{Utc, NaiveDate, Days};
 use anyhow::format_err;
+use crate::route::launchpad::{ProjectInfo, ProjectLink};
 
 pub(crate) mod tables;
 const PAGE_SIZE:i32 = 10;
@@ -107,12 +108,26 @@ pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow:
 }
 pub(crate) async fn get_events_without_time(rb: &Rbatis) -> anyhow::Result<Vec<EventHash>> {
     let events: Vec<EventHash> = rb
-        .query_decode("select id,tx_hash,event_type from events where event_time is null order by id asc limit 10",
+        .query_decode("select id,tx_hash,event_type from events where event_time is null order by id asc limit 100",
                       vec![])
         .await?;
     Ok(events)
 }
+pub(crate) async fn get_pools_pre_day_tvl(rb: &Rbatis,day: String) -> anyhow::Result<Vec<PairTvlStatInfo>> {
+    let date = Date::from_str(&day).unwrap();
+    let tvl_stats: Vec<PairTvlStatInfo> = rb
+        .query_decode("with tvl_ret as (
+        select s.* from (select *, row_number() over (partition by tvl_stats.pair_address
+        order by  tvl_stats.stat_date  desc) as group_idx
+        from  tvl_stats) s where s.group_idx = 1)
+        select p.pair_address,p.token_x_symbol,p.token_y_symbol,p.token_x_address,\
+        p.token_y_address,coalesce(s.usd_tvl,0) as usd_tvl from \
+        pool_info p left join tvl_ret s on p.pair_address = s.pair_address \
+        where s.usd_tvl is not null and s.stat_date < ?", vec![rbs::to_value!(date)])
+        .await?;
 
+    Ok(tvl_stats)
+}
 pub(crate) async fn get_pools_day_tvl(rb: &Rbatis,day: String) -> anyhow::Result<Vec<EventStatData>> {
     let pools_tvl_day:Vec<EventStatData> = rb
         .query_decode("select pair_address,to_char(event_time,'YYYY-MM-DD') as day,amount_x,amount_y  \
@@ -200,11 +215,11 @@ pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Vec<Token>
 pub async fn get_token_decimals_in_pool(rb:&Rbatis,pair_address: String ) -> anyhow::Result<(i8,i8)> {
     let x_decimals: i8 = rb
         .query_decode("select t.decimals from tokens t,pool_info p where p.pair_address = ? \
-        and p.token_x_address = t.address",vec![rbs::to_value!(pair_address.clone())])
+        and p.token_x_address = t.address limit 1",vec![rbs::to_value!(pair_address.clone())])
         .await?;
     let y_decimals: i8 = rb
         .query_decode("select t.decimals from tokens t,pool_info p where p.pair_address = ? \
-        and p.token_y_address = t.address",vec![rbs::to_value!(pair_address)])
+        and p.token_y_address = t.address limit 1",vec![rbs::to_value!(pair_address)])
         .await?;
     Ok((x_decimals,y_decimals))
 }
@@ -236,16 +251,11 @@ pub async fn get_tokens(rb:&Rbatis) -> anyhow::Result<Vec<Token>> {
     Ok(tokens)
 }
 pub(crate) async fn update_events_timestamp(rb: &mut Rbatis, timestamps: Vec<(i64,i32)>) -> anyhow::Result<()> {
-    let mut tx = rb
-        .acquire_begin()
-        .await?;
-
     for (id,event_time) in timestamps {
-        tx.exec("update events set event_time = ? where id = ?",
+        rb.exec("update events set event_time = ? where id = ?",
                 vec![rbs::to_value!(DateTime::from_timestamp(event_time as i64)), rbs::to_value!(id)])
             .await?;
     }
-    tx.commit().await?;
     Ok(())
 }
 pub(crate) async fn update_from_of_add_liq_events(rb: &mut Rbatis, from_address: Vec<(i64,String)>) -> anyhow::Result<()> {
@@ -410,27 +420,43 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String, is_vs_usdc: 
 
 }
 
-pub(crate) async fn save_day_stats(rb: &mut Rbatis, stats: Vec<EventStat>) -> anyhow::Result<()> {
+pub(crate) async fn save_day_tvl_stats(rb: &mut Rbatis, stats: Vec<TvlStat>) -> anyhow::Result<()> {
     let mut tx = rb
         .acquire_begin()
         .await?;
     for stat in stats {
-        tx.exec("insert into event_stats (pair_address,stat_date,x_reserves,y_reserves,x_volume,\
-        y_volume,usd_tvl,usd_volume) values (?,?,?,?,?,?,?,?) on conflict(pair_address,stat_date) do update set \
-        x_reserves = ?,y_reserves = ?,x_volume = ?,y_volume = ?,usd_tvl = ?,usd_volume = ?",
+        tx.exec("insert into tvl_stats (pair_address,stat_date,x_reserves,y_reserves,usd_tvl) \
+        values (?,?,?,?,?) on conflict(pair_address,stat_date) do update set \
+        x_reserves = ?,y_reserves = ?,usd_tvl = ?",
                 vec![rbs::to_value!(stat.pair_address),
                      rbs::to_value!(stat.stat_date),
                      rbs::to_value!(stat.x_reserves.clone()),
                      rbs::to_value!(stat.y_reserves.clone()),
-                     rbs::to_value!(stat.x_volume.clone()),
-                     rbs::to_value!(stat.y_volume.clone()),
                      rbs::to_value!(stat.usd_tvl.clone()),
-                     rbs::to_value!(stat.usd_volume.clone()),
                      rbs::to_value!(stat.x_reserves.clone()),
                      rbs::to_value!(stat.y_reserves.clone()),
+                     rbs::to_value!(stat.usd_tvl.clone()),
+                ]).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+pub(crate) async fn save_day_volume_stats(rb: &mut Rbatis, stats: Vec<VolumeStat>) -> anyhow::Result<()> {
+    let mut tx = rb
+        .acquire_begin()
+        .await?;
+    for stat in stats {
+        tx.exec("insert into volume_stats (pair_address,stat_date,x_volume,y_volume,usd_volume) \
+        values (?,?,?,?,?) on conflict(pair_address,stat_date) do update set \
+        x_volume = ?,y_volume = ?,usd_volume = ?",
+                vec![rbs::to_value!(stat.pair_address),
+                     rbs::to_value!(stat.stat_date),
                      rbs::to_value!(stat.x_volume.clone()),
                      rbs::to_value!(stat.y_volume.clone()),
-                     rbs::to_value!(stat.usd_tvl.clone()),
+                     rbs::to_value!(stat.usd_volume.clone()),
+                     rbs::to_value!(stat.x_volume.clone()),
+                     rbs::to_value!(stat.y_volume.clone()),
                      rbs::to_value!(stat.usd_volume.clone()),
                 ]).await?;
     }
@@ -438,14 +464,29 @@ pub(crate) async fn save_day_stats(rb: &mut Rbatis, stats: Vec<EventStat>) -> an
     Ok(())
 }
 pub async fn get_unstated_days(rb:&Rbatis,confined_start_date:&String) -> anyhow::Result<Vec<String>> {
-    let start_date: Option<Date> = rb
-        .query_decode("select max(stat_date) from event_stats",vec![])
+    let tvl_start_date: Option<Date> = rb
+        .query_decode("select max(stat_date) from tvl_stats",vec![])
+        .await?;
+    let volume_start_date: Option<Date> = rb
+        .query_decode("select max(stat_date) from volume_stats",vec![])
         .await?;
     //start from block which confined
-    let date_str = if start_date.is_none() {
+    let date_str = if tvl_start_date.is_none() || volume_start_date.is_none() {
         confined_start_date.to_owned()
     } else {
-        start_date.unwrap().0.to_string()
+        let tvl_date_str = tvl_start_date.unwrap().0.to_string();
+        let volume_date_str = volume_start_date.unwrap().0.to_string();
+        if tvl_date_str == volume_date_str {
+            tvl_date_str
+        } else {
+            let tvl_date = NaiveDate::parse_from_str(&tvl_date_str, "%Y-%m-%d").unwrap();
+            let volume_date = NaiveDate::parse_from_str(&volume_date_str, "%Y-%m-%d").unwrap();
+            if tvl_date.gt(&volume_date) {
+                volume_date_str
+            } else {
+                tvl_date_str
+            }
+        }
     };
     println!("start_date is {:?}",date_str);
     let now = Utc::now().date_naive();
@@ -456,6 +497,8 @@ pub async fn get_unstated_days(rb:&Rbatis,confined_start_date:&String) -> anyhow
         let mut tmp_date = now;
         loop {
             let pre_day = tmp_date.checked_sub_days(Days::new(1u64)).unwrap();
+            //todo:It should be checked that the statistics have not been completed when the service is
+            // abnormally terminated, and the data of start_date needs to be re-stated
             if pre_day.lt(&start_date) {
                 break;
             }
@@ -470,14 +513,14 @@ pub async fn get_pool_usd_price(rb:&Rbatis,pair_address: String) -> anyhow::Resu
     //get current token_x/token_y price
     let price_x: Option<Decimal> = rb
         .query_decode("select t.usd_price from tokens t,pool_info p where \
-        t.address = p.token_x_address and p.pair_address = ?",
+        t.address = p.token_x_address and p.pair_address = ? limit 1",
                       vec![rbs::to_value!(pair_address.clone())])
         .await?;
     let (price,x_price) = if price_x.is_none() {
 
         let price_y: Option<Decimal> = rb
             .query_decode("select t.usd_price from tokens t,pool_info p where \
-        t.address = p.token_y_address and p.pair_address = ?",
+        t.address = p.token_y_address and p.pair_address = ? limit 1",
                           vec![rbs::to_value!(pair_address)])
             .await?;
         (price_y,false)
@@ -491,59 +534,181 @@ pub async fn get_pool_usd_price(rb:&Rbatis,pair_address: String) -> anyhow::Resu
 }
 pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow::Result<(usize,Vec<PairStatInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
-    let pools_stat_info_day: Vec<PairStatInfo> = rb
-        .query_decode("select p.pair_address,p.token_x_symbol,p.token_y_symbol,p.token_x_address,p.token_y_address,\
-        coalesce(s.usd_tvl,0) as usd_tvl,coalesce(s.usd_volume,0) as usd_volume,\
-        coalesce(s.usd_volume,0) as usd_volume_week from \
-        event_stats s left join pool_info p on p.pair_address = s.pair_address \
+    let pools_tvl_stat: Vec<PairTvlStatInfo> = rb
+        .query_decode("with tvl_ret as (
+        select s.* from (select *, row_number() over (partition by tvl_stats.pair_address
+        order by  tvl_stats.stat_date  desc) as group_idx
+        from  tvl_stats) s where s.group_idx = 1)
+        select p.pair_address,p.token_x_symbol,p.token_y_symbol,p.token_x_address,\
+        p.token_y_address,coalesce(s.usd_tvl,0) as usd_tvl from \
+        pool_info p left join tvl_ret s on p.pair_address = s.pair_address \
         where s.usd_tvl is not null order by s.usd_tvl desc offset ? limit ?", vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
     let mut ret = Vec::new();
-    for stat_info in pools_stat_info_day {
+    let pools_count: usize = pools_tvl_stat.len();
+    println!("pools count is {}",pools_count);
+    for tvl_stat in pools_tvl_stat {
         let pool_day_volume: HashMap<String,Decimal> = rb
-            .query_decode("select coalesce(sum(usd_volume),0) as total_usd_volume from event_stats where \
+            .query_decode("select coalesce(sum(usd_volume),0) as total_usd_volume from volume_stats where \
             pair_address = ? and stat_date > current_date - interval '1 days' limit 1",
-                          vec![rbs::to_value!(stat_info.pair_address.clone())])
+                          vec![rbs::to_value!(tvl_stat.pair_address.clone())])
             .await?;
         let pool_week_volume: HashMap<String,Decimal> = rb
-            .query_decode("select coalesce(sum(usd_volume),0) as total_usd_volume from event_stats where \
+            .query_decode("select coalesce(sum(usd_volume),0) as total_usd_volume from volume_stats where \
             pair_address = ? and stat_date > current_date - interval '7 days' limit 1",
-                          vec![rbs::to_value!(stat_info.pair_address.clone())])
+                          vec![rbs::to_value!(tvl_stat.pair_address.clone())])
             .await?;
         let pair_stat_info = PairStatInfo {
+            pair_address: tvl_stat.pair_address,
+            token_x_symbol: tvl_stat.token_x_symbol,
+            token_y_symbol: tvl_stat.token_y_symbol,
+            token_x_address: tvl_stat.token_x_address,
+            token_y_address: tvl_stat.token_y_address,
             usd_volume_week:pool_week_volume.get(&"total_usd_volume".to_string()).unwrap().clone(),
             usd_volume: pool_day_volume.get(&"total_usd_volume".to_string()).unwrap().clone(),
-            ..stat_info
+
+            usd_tvl: tvl_stat.usd_tvl
         };
         ret.push(pair_stat_info);
     }
-    let pools_count: usize = rb
-        .query_decode("select count(1) from event_stats where s.usd_tvl is not null",vec![]).await?;
+
     let quo = pools_count / PAGE_SIZE as usize;
     let pg_count = if pools_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
     Ok((pg_count,ret))
 }
 
 pub async fn get_all_tvls_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,Decimal)>> {
-    let all_tvls:Vec<HashMap<String,String>> = rb
-        .query_decode("select stat_date,coalesce(sum(usd_tvl),0) as total_tvl from event_stats \
-        group by stat_date order by stat_date desc", vec![]).await?;
+    let all_tvls: Vec<HistoryStatInfo> = rb
+        .query_decode("select * from history_stats order by stat_date desc", vec![]).await?;
     let ret = all_tvls.iter().map(|t|
-        (t.get(&"stat_date".to_string()).unwrap().clone(),
-        Decimal::from_str(t.get(&"total_tvl".to_string()).unwrap()).unwrap()
-        )).collect::<Vec<_>>();
+        (t.stat_date.to_string(), t.usd_tvl.clone())).collect::<Vec<_>>();
     Ok(ret)
 }
 pub async fn get_all_volumes_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,Decimal)>> {
-    let all_volumes: Vec<HashMap<String,String>> = rb
-        .query_decode("select stat_date,coalesce(sum(usd_volume),0) as total_volume from event_stats \
-        group by stat_date order by stat_date desc", vec![]).await?;
-    let ret = all_volumes.iter().map(|t|
-        (t.get(&"stat_date".to_string()).unwrap().clone(),
-         Decimal::from_str(t.get(&"total_volume".to_string()).unwrap()).unwrap()
-        )).collect::<Vec<_>>();
+    let all_tvls: Vec<HistoryStatInfo> = rb
+        .query_decode("select * from history_stats order by stat_date desc", vec![]).await?;
+    let ret = all_tvls.iter().map(|t|
+        (t.stat_date.to_string(), t.usd_volume.clone())).collect::<Vec<_>>();
     Ok(ret)
 }
+pub(crate) async fn save_history_stat(rb: &mut Rbatis, stat: HistoryStatInfo) -> anyhow::Result<()> {
+    HistoryStatInfo::insert(rb, &stat)
+        .await?;
+    Ok(())
+}
+pub(crate) async fn save_history_stats(rb: &Rbatis, stats: Vec<HistoryStatInfo>) -> anyhow::Result<()> {
+    let mut tx = rb
+        .acquire_begin()
+        .await?;
+
+    for stat in stats {
+        HistoryStatInfo::insert(&mut tx, &stat)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+pub(crate) async fn save_project(rb: &mut Rbatis, project: &Project) -> anyhow::Result<()> {
+    Project::insert(rb,project).await?;
+    Ok(())
+}
+pub async fn get_project_by_name(rb:&Rbatis,project_name: String) -> anyhow::Result<Option<Project>> {
+    let project: Option<Project> = rb
+        .query_decode("select * from projects where project_name = ?",vec![rbs::to_value!(project_name)])
+        .await?;
+    Ok(project)
+}
+pub async fn get_projects(rb:&Rbatis) -> anyhow::Result<Vec<Project>> {
+    let projects: Vec<Project> = rb
+        .query_decode("select * from projects order by created_time desc",vec![])
+        .await?;
+    Ok(projects)
+}
+pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<ProjectInfo>)> {
+    let offset = (pg_no - 1) * PAGE_SIZE;
+    let projects: Vec<Project> = rb
+        .query_decode("select * from projects order by created_time desc offset ? limit ? ",
+                      vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
+        .await?;
+    let projects_count: usize = rb
+        .query_decode("select count(1) from projects",vec![]).await?;
+    let quo = projects_count / PAGE_SIZE as usize;
+    let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
+
+    let ret = projects.iter().map(|p| {
+        let project_links: ProjectLink = serde_json::from_str(&p.project_links.to_string()).unwrap();
+        ProjectInfo {
+            project_name: p.project_name.clone(),
+            project_description: p.project_description.clone(),
+            project_links,
+            project_owner: p.project_owner.clone(),
+            receive_token: p.receive_token.clone(),
+            token_address: p.token_address.clone(),
+            token_price_usd: p.token_price_usd.0.to_string(),
+            start_time: p.start_time.to_string(),
+            end_time: p.end_time.to_string(),
+            raise_limit: p.raise_limit,
+            purchased_min_limit: p.purchased_min_limit,
+            purchased_max_limit: p.purchased_max_limit,
+            created_time: p.created_time.to_string(),
+            last_updated_time: p.last_update_time.to_string(),
+            paused: p.paused
+        }
+    }).collect::<Vec<_>>();
+    Ok((pg_count,ret))
+}
+
+
+pub(crate) async fn save_project_addresses(rb: &mut Rbatis, project_addresses: Vec<ProjectAddress>) -> anyhow::Result<()> {
+    let mut tx = rb
+        .acquire_begin()
+        .await?;
+    for addr in project_addresses {
+        ProjectAddress::insert(&mut tx, &addr).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<ProjectAddress>> {
+    let projects: Vec<ProjectAddress> = rb
+        .query_decode("select * from project_addresses",vec![])
+        .await?;
+    Ok(projects)
+}
+
+pub(crate) async fn save_user_invests(rb: &mut Rbatis, user_invests: Vec<UserInvest>) -> anyhow::Result<()> {
+    let mut tx = rb
+        .acquire_begin()
+        .await?;
+    for invest in user_invests {
+        UserInvest::insert(&mut tx, &invest).await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<LaunchpadStatInfo> {
+    let projects_count: usize = rb
+        .query_decode("select count(1) from projects",vec![]).await?;
+    let users_count: usize = rb
+        .query_decode("select count(distinct user) from user_invest_events",
+                      vec![])
+        .await?;
+    let total_invest_amount: Decimal = rb
+        .query_decode("select sum(amount) from user_invest_events",vec![]).await?;
+
+    let stat_info = LaunchpadStatInfo {
+        projects_count,
+        users_count,
+        total_amount: total_invest_amount.0.to_string()
+    };
+    Ok(stat_info)
+}
+// pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<ProjectAddress>> {
+//     let projects: Vec<ProjectAddress> = rb
+//         .query_decode("select * from project_addresses",vec![])
+//         .await?;
+//     Ok(projects)
+// }
 #[cfg(test)]
 mod test {
     use super::*;
@@ -639,20 +804,19 @@ mod test {
         println!("{:?}",price);
 
     }
-    // #[tokio::test]
-    // async fn test_get_stat_info() {
-    //     let mut rb = Rbatis::new();
-    //     let db_url = "postgres://postgres:postgres123@localhost/backend";
-    //     rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
-    //     let pool = rb
-    //         .get_pool()
-    //         .expect("get pool failed");
-    //     pool.resize(2);
-    //     let day = Decimal::from_str("2023-05-14").unwrap();
-    //     get_pools_stat_info_by_page(&rb,day,0).await.unwrap();
-    //     //println!("{:?}",price);
-    //
-    // }
+    #[tokio::test]
+    async fn test_get_pools_pre_day_stat() {
+        let mut rb = Rbatis::new();
+        let db_url = "postgres://postgres:postgres123@localhost/backend";
+        rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
+        let pool = rb
+            .get_pool()
+            .expect("get pool failed");
+        pool.resize(2);
+        get_pools_pre_day_tvl(&rb,"2023-04-05".to_string()).await.unwrap();
+        //println!("{:?}",price);
+
+    }
     #[test]
     fn test_price_round() {
         let price = 2776241.005739527237224783614307467819823209977418423578576313402819369935414783867599908262491226196000000000000;
@@ -661,4 +825,24 @@ mod test {
         println!("{:?}",ret_price)
     }
 
+    #[tokio::test]
+    async fn test_update_by_column() {
+        let mut rb = Rbatis::new();
+        let db_url = "postgres://postgres:postgres123@localhost/backend";
+        rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
+        let pool = rb
+            .get_pool()
+            .expect("get pool failed");
+        pool.resize(2);
+        let new_token = Token {
+            address: "a1ea0b2354f5a344110af2b6ad68e75545009a03".to_string(),
+            symbol: "".to_string(),
+            decimals: 19,
+            coingecko_id: None,
+            usd_price: None
+        };
+        Token::update_by_column(&mut rb,&new_token,"address").await.unwrap();
+        //println!("{:?}",price);
+
+    }
 }

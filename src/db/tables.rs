@@ -5,6 +5,7 @@ use std::str::FromStr;
 use web3::ethabi::Uint;
 use rbatis::rbdc::date::Date;
 use rbatis::rbdc::datetime::DateTime;
+use rbatis::rbdc::json::Json;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Token {
@@ -45,14 +46,19 @@ pub struct EventInfo {
     pub token_y_decimals: i8,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct EventStat {
+pub struct TvlStat {
     pub pair_address: String,
     pub stat_date: Date,
     pub x_reserves: Decimal,
     pub y_reserves: Decimal,
+    pub usd_tvl: Decimal,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct VolumeStat {
+    pub pair_address: String,
+    pub stat_date: Date,
     pub x_volume: Decimal,
     pub y_volume: Decimal,
-    pub usd_tvl: Decimal,
     pub usd_volume: Decimal,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -97,6 +103,23 @@ pub struct PairStatInfo {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct PairTvlStatInfo {
+    pub(crate) pair_address: String,
+    pub(crate) token_x_symbol:String,
+    pub(crate) token_y_symbol: String,
+    pub(crate) token_x_address: String,
+    pub(crate) token_y_address: String,
+    pub(crate) usd_tvl: Decimal,
+
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct HistoryStatInfo {
+    pub(crate) stat_date: Date,
+    pub(crate) usd_tvl: Decimal,
+    pub(crate) usd_volume: Decimal,
+
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PriceCumulativeLast {
     // pub(crate) id: i32,
     pub(crate) pair_address: String,
@@ -108,14 +131,78 @@ pub struct PriceCumulativeLast {
 pub struct LastSyncBlock {
     pub block_number: i64,
 }
-
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Project {
+    // pub(crate) id: i32,
+    pub(crate)  project_name: String,
+    pub(crate) project_description: String,
+    pub(crate)  project_links: Json,
+    pub(crate)  project_owner: String,
+    pub(crate)  receive_token: String,
+    pub(crate)  token_address: String,
+    pub(crate)  token_price_usd: Decimal,
+    pub(crate)  start_time: DateTime,
+    pub(crate)  end_time: DateTime,
+    pub(crate)  raise_limit: i32,
+    pub(crate)  purchased_min_limit: i32,
+    pub(crate)  purchased_max_limit: i32,
+    pub(crate)  created_time: DateTime,
+    pub(crate)  last_update_time: DateTime,
+    pub(crate)  paused: bool,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ProjectAddress {
+    pub(crate)  project_name: String,
+    pub(crate) project_address: String,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct UserInvest {
+    pub(crate) tx_hash: String,
+    pub(crate) project_address: String,
+    pub(crate)  user: String,
+    pub(crate) amount: Decimal,
+    pub(crate) invest_time: Option<DateTime>
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct LaunchpadStatInfo {
+    pub(crate) projects_count: usize,
+    pub(crate) users_count: usize,
+    pub(crate) total_amount: String,
+    // total_market_cap: String,
+}
 rbatis::crud!(Event {}, "events");
 rbatis::crud!(PoolInfo {}, "pool_info");
 rbatis::crud!(Token {}, "tokens");
 rbatis::crud!(PriceCumulativeLast {}, "price_cumulative_last");
 rbatis::crud!(LastSyncBlock {}, "last_sync_block");
-rbatis::crud!(EventStat {}, "event_stats");
+rbatis::crud!(TvlStat {}, "tvl_stats");
+rbatis::crud!(VolumeStat {}, "volume_stats");
+rbatis::crud!(HistoryStatInfo {}, "history_stats");
+rbatis::crud!(Project {}, "projects");
+rbatis::crud!(ProjectAddress {}, "project_addresses");
+rbatis::crud!(UserInvest {}, "user_invest_events");
 
+impl Default for Project {
+    fn default() -> Self {
+        Self {
+            project_name: "".to_string(),
+            project_description: "".to_string(),
+            project_links: Default::default(),
+            project_owner: "".to_string(),
+            receive_token: "".to_string(),
+            token_address: "".to_string(),
+            token_price_usd: Decimal::from_str("0").unwrap(),
+            start_time: DateTime::from_timestamp(0),
+            end_time: DateTime::from_timestamp(0),
+            raise_limit: 0,
+            purchased_min_limit: 0,
+            purchased_max_limit: 0,
+            created_time: DateTime::from_timestamp(0),
+            last_update_time: DateTime::from_timestamp(0),
+            paused: false
+        }
+    }
+}
 impl From<PairEvent> for Event {
     fn from(event: PairEvent) -> Self {
         match event {
@@ -185,5 +272,27 @@ impl From<PairEvent> for Event {
             }
         }
 
+    }
+}
+
+impl From<TvlStat> for EventStatData {
+    fn from(tvl: TvlStat) -> Self {
+        Self {
+            pair_address: tvl.pair_address,
+            day: tvl.stat_date.to_string(),
+            amount_x: tvl.x_reserves,
+            amount_y: tvl.y_reserves
+        }
+    }
+}
+
+impl From<VolumeStat> for EventStatData {
+    fn from(volume: VolumeStat) -> Self {
+        Self {
+            pair_address: volume.pair_address,
+            day: volume.stat_date.to_string(),
+            amount_x: volume.x_volume,
+            amount_y: volume.y_volume
+        }
     }
 }

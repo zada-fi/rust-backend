@@ -5,7 +5,7 @@ use web3::{
     Web3,
 };
 use crate::config::BackendConfig;
-use crate::db::tables::{PoolInfo, Token, PriceCumulativeLast, EventHash};
+use crate::db::tables::{PoolInfo, Token, PriceCumulativeLast, EventHash, ProjectAddress, UserInvest};
 use crate::db;
 use web3::types::{H160, H256};
 use web3::transports::Http;
@@ -18,18 +18,21 @@ use anyhow::format_err;
 use web3::contract::{Contract, Options};
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
-use crate::watcher::event::{ PairCreatedEvent, PairEvent,EventType};
+use crate::watcher::event::{PairCreatedEvent, PairEvent, EventType, ProjectCreatedEvent, UserInvestEvent};
 use crate::token_price::ETH_ADDRESS;
 
 const FACTORY_EVENTS: &str = include_str!("../abi/factory_abi.json");
 const PAIR_EVENTS: &str = include_str!("../abi/pair_abi.json");
+const LAUNCHPAD_EVENTS: &str = include_str!("../abi/launchpad_abi.json");
 #[derive(Clone)]
 pub struct ChainWatcher {
     pub config: BackendConfig,
     pub web3: Web3<Http>,
     pub db: rbatis::Rbatis,
     pub all_pairs: Vec<H160>,
+    pub all_projects: Vec<H160>,
     pub pair_topics: HashMap<String,H256>,
+    pub launchpad_topics: HashMap<String,H256>,
 }
 impl ChainWatcher {
     // pub fn build_contract(abi_string: &str,web3_url:&str,contract_address:&str) -> Contract<Provider<Http>>{
@@ -159,6 +162,23 @@ impl ChainWatcher {
         topics
     }
 
+    pub fn get_launchpad_topics() -> HashMap<String,H256> {
+        let mut topics = HashMap::new();
+        let launchpad_contract = ethabi::Contract::load(LAUNCHPAD_EVENTS.as_bytes()).unwrap();
+        let create_project_topic = launchpad_contract
+            .event("ProjectCreated")
+            .expect("launchpad contract abi error")
+            .signature();
+        let user_invest_topic = launchpad_contract
+            .event("UserInvestment")
+            .expect("launchpad contract abi error")
+            .signature();
+
+        topics.insert(String::from("create_project"),H256::from(create_project_topic.0));
+        topics.insert(String::from("user_invest"),H256::from(user_invest_topic.0));
+        topics
+    }
+
     pub async fn get_price_cumulative_last(&mut self, pair_address: H160) ->anyhow::Result<()> {
         println!("get price of pool {:?}",pair_address);
         //get from chain
@@ -190,45 +210,48 @@ impl ChainWatcher {
     }
 
     pub async fn update_events_time(&mut self) ->anyhow::Result<()> {
-        loop {
-            let will_update_events:Vec<EventHash> = db::get_events_without_time(&self.db).await?;
-            if will_update_events.is_empty() {
-                break;
-            }
-            let mut update_timestamps = Vec::new();
-            let mut add_liq_accounts = Vec::new();
-            for event in will_update_events {
-                let hash = H256::from_slice(&hex::decode(&event.tx_hash).unwrap());
-                let tx = self.web3.eth().transaction(hash.into()).await?;
-                let (tx_time,from) = if let Some(tx) = tx {
-                    let block = self.web3.eth().block(tx.block_number.unwrap().into()).await?;
-                    if let Some(block) = block {
-                        (block.timestamp.as_u32() as i32,tx.from.unwrap())
-                    } else { continue; }
-                } else { continue; };
-                println!("block time is {}",tx_time);
-                if event.event_type == EventType::AddLiq as i8 {
-                    add_liq_accounts.push((event.id,hex::encode(from)));
-                }
-                update_timestamps.push((event.id,tx_time));
-            }
-            db::update_events_timestamp(&mut self.db,update_timestamps).await?;
-            db::update_from_of_add_liq_events(&mut self.db,add_liq_accounts).await?;
+        let will_update_events:Vec<EventHash> = db::get_events_without_time(&self.db).await?;
+        if will_update_events.is_empty() {
+            return Ok(());
         }
+        let mut update_timestamps = Vec::new();
+        let mut add_liq_accounts = Vec::new();
+        for event in will_update_events {
+            let hash = H256::from_slice(&hex::decode(&event.tx_hash).unwrap());
+            let tx = self.web3.eth().transaction(hash.into()).await?;
+            let (tx_time,from) = if let Some(tx) = tx {
+                let block = self.web3.eth().block(tx.block_number.unwrap().into()).await?;
+                if let Some(block) = block {
+                    (block.timestamp.as_u32() as i32,tx.from.unwrap())
+                } else { continue; }
+            } else { continue; };
+            println!("block time is {}",tx_time);
+            if event.event_type == EventType::AddLiq as i8 {
+                add_liq_accounts.push((event.id,hex::encode(from)));
+            }
+            update_timestamps.push((event.id,tx_time));
+        }
+        db::update_events_timestamp(&mut self.db,update_timestamps).await?;
+        db::update_from_of_add_liq_events(&mut self.db,add_liq_accounts).await?;
         Ok(())
     }
     pub async fn new(config:BackendConfig,db: rbatis::Rbatis) -> anyhow::Result<Self> {
         let transport = web3::transports::Http::new(&config.remote_web3_url).unwrap();
         let web3 = Web3::new(transport);
         let topics = Self::get_topics();
+        let launchpad_topics = Self::get_launchpad_topics();
         let pools = db::get_all_store_pools(&db).await?;
         let all_pairs: Vec<H160> = pools.iter().map(|p| H160::from_str(&p.pair_address).unwrap()).collect();
+        let projects = db::get_project_addresses(&db).await?;
+        let all_projects = projects.iter().map(|p| H160::from_str(&p.project_address).unwrap()).collect();
         Ok(Self {
             web3,
             config,
             db,
             all_pairs,
-            pair_topics:topics
+            all_projects,
+            pair_topics:topics,
+            launchpad_topics
         })
     }
 
@@ -281,12 +304,72 @@ impl ChainWatcher {
         let topics = vec![self.pair_topics.get(pair_type).unwrap().clone()];
         //if the addresses of the filter is empty,it will filter only by topics,finally will get the
         //other contract's events with the same topics
-        if self.all_pairs.len() == 0 {
-            return Err(format_err!("filter's addresses is empty!"));
+        if self.all_pairs.is_empty() {
+            println!("filter pairs is empty");
+            return Ok(());
         }
         let logs: Vec<PairEvent> = self.sync_events(from,to, self.all_pairs.clone(), topics).await?;
         if !logs.is_empty() {
             db::store_pair_events(&mut self.db, logs).await?;
+        }
+        Ok(())
+    }
+
+    async fn sync_project_created_events(
+        &mut self,
+        from: u64,
+        to: u64,
+    ) -> anyhow::Result<()> {
+        let create_project_topic = self.launchpad_topics.get(&String::from("created_project")).unwrap().clone();
+        println!("sync_project_created_events {:?} {:?} {:?}",from,to,create_project_topic);
+        let logs: Vec<ProjectCreatedEvent> =
+            self.sync_events(
+                from,
+                to,
+                vec![self.config.launchpad_address],
+                vec![create_project_topic]).await?;
+        let mut project_addresses = Vec::new();
+        for event in logs {
+            println!("Get ProjectCreated event : project_name = {:?},project_address = {:?}",
+                     event.project_name,
+                     hex::encode(event.project_address));
+            let project = ProjectAddress {
+                project_name: event.project_name,
+                project_address: hex::encode(event.project_address),
+            };
+
+            self.all_projects.push(event.project_address);
+            project_addresses.push(project);
+        }
+        // todo: should use another task to save in batches
+        if !project_addresses.is_empty() {
+            db::save_project_addresses(&mut self.db, project_addresses).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn sync_project_events(
+        &mut self,
+        from: u64,
+        to: u64,
+    ) -> anyhow::Result<()> {
+        let topics = vec![self.launchpad_topics.get("user_invest").unwrap().clone()];
+        //if the addresses of the filter is empty,it will filter only by topics,finally will get the
+        //other contract's events with the same topics
+        if self.all_projects.is_empty() {
+            return Ok(());
+        }
+        let logs: Vec<UserInvestEvent> = self.sync_events(from,to, self.all_projects.clone(), topics).await?;
+        if !logs.is_empty() {
+            let invest_events = logs.iter().map(|l| UserInvest {
+                tx_hash: hex::encode(l.meta.tx_hash.as_bytes()),
+                project_address: hex::encode(l.meta.address.as_bytes()),
+                user: hex::encode(l.user.as_bytes()),
+                amount: Decimal::from_str(&l.amount.to_string()).unwrap(),
+                invest_time: None
+            }).collect::<Vec<_>>();
+            db::save_user_invests(&mut self.db, invest_events).await?;
         }
         Ok(())
     }
@@ -341,12 +424,14 @@ impl ChainWatcher {
                 break;
             }
             self.sync_pair_created_events(start_block,end_block).await?;
-            if self.all_pairs.len() == 0 {
-                start_block = end_block + 1;
-                continue;
+            if !self.all_pairs.is_empty() {
+                for pair_event_type in &pair_event_types {
+                    self.sync_pair_events(start_block, end_block, pair_event_type).await?;
+                }
             }
-            for pair_event_type in &pair_event_types {
-                self.sync_pair_events(start_block, end_block, pair_event_type).await?;
+            self.sync_project_created_events(start_block,end_block).await?;
+            if !self.all_projects.is_empty() {
+                self.sync_project_events(start_block,end_block).await?;
             }
             start_block = end_block + 1;
             db::upsert_last_sync_block(
@@ -379,6 +464,7 @@ impl ChainWatcher {
         let mut tx_poll = tokio::time::interval(Duration::from_secs(120));
         loop {
             tx_poll.tick().await;
+            println!("update_events_time loop");
             if let Err(e) = self.update_events_time().await {
                 println!("update_events_time error occurred {:?}", e);
                 log::error!("update_events_time error occurred {:?}", e);
