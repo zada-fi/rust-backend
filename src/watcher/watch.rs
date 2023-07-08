@@ -5,7 +5,7 @@ use web3::{
     Web3,
 };
 use crate::config::BackendConfig;
-use crate::db::tables::{PoolInfo, Token, PriceCumulativeLast, EventHash, ProjectAddress, UserInvest};
+use crate::db::tables::{PoolInfo, Token, PriceCumulativeLast, EventHash, UserInvest};
 use crate::db;
 use web3::types::{H160, H256};
 use web3::transports::Http;
@@ -225,7 +225,7 @@ impl ChainWatcher {
                     (block.timestamp.as_u32() as i32,tx.from.unwrap())
                 } else { continue; }
             } else { continue; };
-            println!("block time is {}",tx_time);
+            // println!("block time is {}",tx_time);
             if event.event_type == EventType::AddLiq as i8 {
                 add_liq_accounts.push((event.id,hex::encode(from)));
             }
@@ -240,10 +240,12 @@ impl ChainWatcher {
         let web3 = Web3::new(transport);
         let topics = Self::get_topics();
         let launchpad_topics = Self::get_launchpad_topics();
+        println!("launchpad_topics is {:?}",launchpad_topics);
         let pools = db::get_all_store_pools(&db).await?;
         let all_pairs: Vec<H160> = pools.iter().map(|p| H160::from_str(&p.pair_address).unwrap()).collect();
         let projects = db::get_project_addresses(&db).await?;
-        let all_projects = projects.iter().map(|p| H160::from_str(&p.project_address).unwrap()).collect();
+        println!("projects is {:?}",projects);
+        let all_projects = projects.iter().map(|p| H160::from_str(&p).unwrap()).collect();
         Ok(Self {
             web3,
             config,
@@ -320,7 +322,7 @@ impl ChainWatcher {
         from: u64,
         to: u64,
     ) -> anyhow::Result<()> {
-        let create_project_topic = self.launchpad_topics.get(&String::from("created_project")).unwrap().clone();
+        let create_project_topic = self.launchpad_topics.get(&String::from("create_project")).unwrap().clone();
         println!("sync_project_created_events {:?} {:?} {:?}",from,to,create_project_topic);
         let logs: Vec<ProjectCreatedEvent> =
             self.sync_events(
@@ -328,22 +330,22 @@ impl ChainWatcher {
                 to,
                 vec![self.config.launchpad_address],
                 vec![create_project_topic]).await?;
-        let mut project_addresses = Vec::new();
+        let mut project_addresses = HashMap::new();
         for event in logs {
             println!("Get ProjectCreated event : project_name = {:?},project_address = {:?}",
                      event.project_name,
                      hex::encode(event.project_address));
-            let project = ProjectAddress {
-                project_name: event.project_name,
-                project_address: hex::encode(event.project_address),
-            };
-
             self.all_projects.push(event.project_address);
-            project_addresses.push(project);
+            let addr = hex::encode(event.project_address);
+            project_addresses.insert(event.project_name,addr);
         }
         // todo: should use another task to save in batches
         if !project_addresses.is_empty() {
-            db::save_project_addresses(&mut self.db, project_addresses).await?;
+            println!("update_project_addresses");
+            match db::update_project_addresses(&mut self.db, project_addresses).await {
+                Err(e) => println!("update_project_addresses failed {:?}",e),
+                Ok(_) => {}
+            }
         }
 
         Ok(())
@@ -365,8 +367,8 @@ impl ChainWatcher {
             let invest_events = logs.iter().map(|l| UserInvest {
                 tx_hash: hex::encode(l.meta.tx_hash.as_bytes()),
                 project_address: hex::encode(l.meta.address.as_bytes()),
-                user: hex::encode(l.user.as_bytes()),
-                amount: Decimal::from_str(&l.amount.to_string()).unwrap(),
+                invest_user: hex::encode(l.user.as_bytes()),
+                invest_amount: Decimal::from_str(&l.amount.to_string()).unwrap(),
                 invest_time: None
             }).collect::<Vec<_>>();
             db::save_user_invests(&mut self.db, invest_events).await?;
@@ -391,7 +393,7 @@ impl ChainWatcher {
             .topics(Some(topics), None, None, None)
             .build();
         let mut logs = self.web3.eth().logs(filter).await?;
-        // println!("get logs {:?}",logs);
+        println!("get logs {:?}",logs);
         let is_possible_to_sort_logs = logs.iter().all(|log| log.log_index.is_some());
         if is_possible_to_sort_logs {
             logs.sort_by_key(|log| {
@@ -423,12 +425,12 @@ impl ChainWatcher {
             if start_block > end_block {
                 break;
             }
-            self.sync_pair_created_events(start_block,end_block).await?;
-            if !self.all_pairs.is_empty() {
-                for pair_event_type in &pair_event_types {
-                    self.sync_pair_events(start_block, end_block, pair_event_type).await?;
-                }
-            }
+            // self.sync_pair_created_events(start_block,end_block).await?;
+            // if !self.all_pairs.is_empty() {
+            //     for pair_event_type in &pair_event_types {
+            //         self.sync_pair_events(start_block, end_block, pair_event_type).await?;
+            //     }
+            // }
             self.sync_project_created_events(start_block,end_block).await?;
             if !self.all_projects.is_empty() {
                 self.sync_project_events(start_block,end_block).await?;

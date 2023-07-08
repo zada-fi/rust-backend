@@ -1,5 +1,5 @@
 use rbatis::Rbatis;
-use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStatData, PairStatInfo, EventInfo, Project, TvlStat, VolumeStat, PairTvlStatInfo, HistoryStatInfo, ProjectAddress, UserInvest, LaunchpadStatInfo};
+use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStatData, PairStatInfo, EventInfo, Project, TvlStat, VolumeStat, PairTvlStatInfo, HistoryStatInfo, UserInvest, LaunchpadStatInfo};
 use num::{ToPrimitive, BigUint};
 use std::collections::HashMap;
 use crate::watcher::event::PairEvent;
@@ -12,7 +12,10 @@ use rbatis::rbdc::datetime::DateTime;
 use rbatis::rbdc::date::Date;
 use chrono::{Utc, NaiveDate, Days};
 use anyhow::format_err;
-use crate::route::launchpad::{ProjectInfo, ProjectLink};
+use crate::route::launchpad::{ProjectInfo, ProjectLink, ClaimableProject};
+use rbatis::rbdc::json::Json;
+use serde_json::Value;
+use std::ops::Mul;
 
 pub(crate) mod tables;
 const PAGE_SIZE:i32 = 10;
@@ -492,8 +495,8 @@ pub async fn get_unstated_days(rb:&Rbatis,confined_start_date:&String) -> anyhow
     let now = Utc::now().date_naive();
     let start_date = NaiveDate::parse_from_str(&date_str,"%Y-%m-%d").unwrap();
     let mut unstated_days = Vec::new();
-    unstated_days.push(now.to_string());
     if now.gt(&start_date) {
+        unstated_days.push(now.to_string());
         let mut tmp_date = now;
         loop {
             let pre_day = tmp_date.checked_sub_days(Days::new(1u64)).unwrap();
@@ -592,8 +595,16 @@ pub async fn get_all_volumes_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,De
     Ok(ret)
 }
 pub(crate) async fn save_history_stat(rb: &mut Rbatis, stat: HistoryStatInfo) -> anyhow::Result<()> {
-    HistoryStatInfo::insert(rb, &stat)
-        .await?;
+    rb.exec("insert into history_stats (stat_date,usd_tvl,usd_volume) \
+        values (?,?,?) on conflict (stat_date) do update set \
+        usd_tvl = ?,usd_volume = ?",
+            vec![
+                 rbs::to_value!(stat.stat_date),
+                 rbs::to_value!(stat.usd_tvl.clone()),
+                 rbs::to_value!(stat.usd_volume.clone()),
+                 rbs::to_value!(stat.usd_tvl.clone()),
+                 rbs::to_value!(stat.usd_volume.clone()),
+            ]).await?;
     Ok(())
 }
 pub(crate) async fn save_history_stats(rb: &Rbatis, stats: Vec<HistoryStatInfo>) -> anyhow::Result<()> {
@@ -618,10 +629,11 @@ pub async fn get_project_by_name(rb:&Rbatis,project_name: String) -> anyhow::Res
         .await?;
     Ok(project)
 }
-pub async fn get_projects(rb:&Rbatis) -> anyhow::Result<Vec<Project>> {
-    let projects: Vec<Project> = rb
-        .query_decode("select * from projects order by created_time desc",vec![])
+pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<String>> {
+    let db_projects: HashMap<String, String> = rb
+        .query_decode("select distinct project_address from projects",vec![])
         .await?;
+    let projects = db_projects.iter().map(|(k,addr)| addr.clone()).collect::<Vec<_>>();
     Ok(projects)
 }
 pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<ProjectInfo>)> {
@@ -636,13 +648,19 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
     let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
 
     let ret = projects.iter().map(|p| {
-        let project_links: ProjectLink = serde_json::from_str(&p.project_links.to_string()).unwrap();
+        println!("project_links is {}",p.project_links);
+        let links_str = &p.project_links.0[..];
+        let project_links: Value = serde_json::from_str(
+            links_str.trim_start_matches('"')
+                .trim_end_matches('"')).unwrap();
         ProjectInfo {
             project_name: p.project_name.clone(),
             project_description: p.project_description.clone(),
-            project_links,
+            project_links: serde_json::from_value(project_links).unwrap(),
+            project_address: p.project_address.clone().unwrap_or_default(),
             project_owner: p.project_owner.clone(),
             receive_token: p.receive_token.clone(),
+            token_symbol: p.token_symbol.clone(),
             token_address: p.token_address.clone(),
             token_price_usd: p.token_price_usd.0.to_string(),
             start_time: p.start_time.to_string(),
@@ -651,31 +669,40 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
             purchased_min_limit: p.purchased_min_limit,
             purchased_max_limit: p.purchased_max_limit,
             created_time: p.created_time.to_string(),
-            last_updated_time: p.last_update_time.to_string(),
+            last_updated_time: p.last_updated_time.clone().unwrap_or(DateTime::from_timestamp(0)).to_string(),
             paused: p.paused
         }
     }).collect::<Vec<_>>();
     Ok((pg_count,ret))
 }
-
-
-pub(crate) async fn save_project_addresses(rb: &mut Rbatis, project_addresses: Vec<ProjectAddress>) -> anyhow::Result<()> {
-    let mut tx = rb
-        .acquire_begin()
-        .await?;
-    for addr in project_addresses {
-        ProjectAddress::insert(&mut tx, &addr).await?;
+pub(crate) async fn update_project_addresses(rb: &mut Rbatis, addresses: HashMap<String,String>)
+                                             -> anyhow::Result<()> {
+    // let mut tx = rb
+    //     .acquire_begin()
+    //     .await?;
+    for (project_name,project_address) in addresses {
+        let old_project = get_project_by_name(rb,project_name.clone()).await.unwrap_or_default();
+        println!("old project is {:?}",old_project);
+        if old_project.is_none() {
+            println!("not found project {}",project_name);
+            return Ok(());
+        }
+        let old_project = old_project.unwrap();
+        let links_str = &old_project.project_links.0[..];
+        let old_project_links: serde_json::Value = serde_json::from_str(
+            links_str.trim_start_matches('"')
+                .trim_end_matches('"')).unwrap();
+        let new_project = Project {
+            project_address: Some(project_address),
+            project_links: serde_json::from_value(old_project_links).unwrap(),
+            ..old_project.clone()
+        };
+        println!("new project is {:?}",new_project);
+        Project::update_by_column(rb, &new_project,"project_name").await?;
     }
-    tx.commit().await?;
+    // tx.commit().await?;
     Ok(())
 }
-pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<ProjectAddress>> {
-    let projects: Vec<ProjectAddress> = rb
-        .query_decode("select * from project_addresses",vec![])
-        .await?;
-    Ok(projects)
-}
-
 pub(crate) async fn save_user_invests(rb: &mut Rbatis, user_invests: Vec<UserInvest>) -> anyhow::Result<()> {
     let mut tx = rb
         .acquire_begin()
@@ -686,15 +713,45 @@ pub(crate) async fn save_user_invests(rb: &mut Rbatis, user_invests: Vec<UserInv
     tx.commit().await?;
     Ok(())
 }
+pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: String ) -> anyhow::Result<(usize,Vec<ClaimableProject>)> {
+    let offset = (pg_no - 1) * PAGE_SIZE;
+    let claimable_projects: HashMap<String,Decimal> = rb
+        .query_decode("select project_address,sum(invest_amount) as total_amount from user_invest_events  \
+         where invest_user = ? group by p.project_address offset ? limit ? ",
+                      vec![rbs::to_value!(addr.clone()),rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
+        .await?;
+    let projects_count: usize = rb
+        .query_decode("select count(1) from user_invest_events where invest_user = ?",vec![rbs::to_value!(addr)]).await?;
+    let quo = projects_count / PAGE_SIZE as usize;
+    let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
+
+    let mut ret = Vec::new();
+    for (project_address,total_amount) in claimable_projects {
+        let project:Project = rb.query_decode("select * from projects where \
+            project_address = ?",vec![rbs::to_value!(project_address)]).await?;
+
+        let token_price_usd = BigDecimal::from_str(&project.token_price_usd.0.to_string()).unwrap();
+        let total_claimable_amount = BigDecimal::from_str(&total_amount.0.to_string()).unwrap();
+        let claimable_amount = token_price_usd.mul(total_claimable_amount);
+        let claimable_project = ClaimableProject {
+            project_name: project.project_name,
+            token_symbol: project.token_symbol,
+            claimable_amount: claimable_amount.to_string(),
+            claim_start_time: project.end_time.to_string()
+        };
+        ret.push(claimable_project);
+    }
+    Ok((pg_count,ret))
+}
 pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<LaunchpadStatInfo> {
     let projects_count: usize = rb
         .query_decode("select count(1) from projects",vec![]).await?;
     let users_count: usize = rb
-        .query_decode("select count(distinct user) from user_invest_events",
+        .query_decode("select count(distinct invest_user) from user_invest_events",
                       vec![])
         .await?;
     let total_invest_amount: Decimal = rb
-        .query_decode("select sum(amount) from user_invest_events",vec![]).await?;
+        .query_decode("select sum(invest_amount) from user_invest_events",vec![]).await?;
 
     let stat_info = LaunchpadStatInfo {
         projects_count,
@@ -703,12 +760,6 @@ pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<LaunchpadStat
     };
     Ok(stat_info)
 }
-// pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<ProjectAddress>> {
-//     let projects: Vec<ProjectAddress> = rb
-//         .query_decode("select * from project_addresses",vec![])
-//         .await?;
-//     Ok(projects)
-// }
 #[cfg(test)]
 mod test {
     use super::*;

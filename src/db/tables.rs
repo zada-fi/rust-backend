@@ -137,8 +137,10 @@ pub struct Project {
     pub(crate)  project_name: String,
     pub(crate) project_description: String,
     pub(crate)  project_links: Json,
+    pub(crate)  project_address: Option<String>,
     pub(crate)  project_owner: String,
     pub(crate)  receive_token: String,
+    pub(crate)  token_symbol: String,
     pub(crate)  token_address: String,
     pub(crate)  token_price_usd: Decimal,
     pub(crate)  start_time: DateTime,
@@ -147,20 +149,16 @@ pub struct Project {
     pub(crate)  purchased_min_limit: i32,
     pub(crate)  purchased_max_limit: i32,
     pub(crate)  created_time: DateTime,
-    pub(crate)  last_update_time: DateTime,
+    pub(crate)  last_updated_time: Option<DateTime>,
     pub(crate)  paused: bool,
 }
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct ProjectAddress {
-    pub(crate)  project_name: String,
-    pub(crate) project_address: String,
-}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct UserInvest {
     pub(crate) tx_hash: String,
     pub(crate) project_address: String,
-    pub(crate)  user: String,
-    pub(crate) amount: Decimal,
+    pub(crate)  invest_user: String,
+    pub(crate) invest_amount: Decimal,
     pub(crate) invest_time: Option<DateTime>
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -179,7 +177,6 @@ rbatis::crud!(TvlStat {}, "tvl_stats");
 rbatis::crud!(VolumeStat {}, "volume_stats");
 rbatis::crud!(HistoryStatInfo {}, "history_stats");
 rbatis::crud!(Project {}, "projects");
-rbatis::crud!(ProjectAddress {}, "project_addresses");
 rbatis::crud!(UserInvest {}, "user_invest_events");
 
 impl Default for Project {
@@ -188,8 +185,10 @@ impl Default for Project {
             project_name: "".to_string(),
             project_description: "".to_string(),
             project_links: Default::default(),
+            project_address: None,
             project_owner: "".to_string(),
             receive_token: "".to_string(),
+            token_symbol: "".to_string(),
             token_address: "".to_string(),
             token_price_usd: Decimal::from_str("0").unwrap(),
             start_time: DateTime::from_timestamp(0),
@@ -198,7 +197,7 @@ impl Default for Project {
             purchased_min_limit: 0,
             purchased_max_limit: 0,
             created_time: DateTime::from_timestamp(0),
-            last_update_time: DateTime::from_timestamp(0),
+            last_updated_time: None,
             paused: false
         }
     }

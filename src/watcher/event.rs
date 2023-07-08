@@ -293,7 +293,7 @@ impl TryFrom<Log> for ProjectCreatedEvent {
             &event.data.0,
         )?;
         Ok(ProjectCreatedEvent {
-            project_name: dec_ev[0].clone().to_string(),
+            project_name: dec_ev[0].clone().into_string().unwrap(),
             project_address: dec_ev[1].clone().into_address().unwrap(),
         })
     }

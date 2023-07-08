@@ -82,16 +82,18 @@ CREATE TABLE history_stats (
 -- store launchpad projects
 CREATE TABLE projects (
     project_name text NOT NULL,
-    project_address text NOT NULL,
     project_description text,
     project_links json,
+    project_address text,
     project_owner text NOT NULL,
+    token_symbol text NOT NULL,
     token_address text NOT NULL,
-    token_price numeric NOT NULL,
+    token_price_usd numeric NOT NULL,
+    receive_token text NOT NULL,
     start_time timestamp NOT NULL,
     end_time timestamp NOT NULL,
-    raise_limit numeric NOT NULL,
-    raised numeric NOT NULL DEFAULT 0,
+    raise_limit integer NOT NULL,
+    raised integer NOT NULL DEFAULT 0,
     paused bool NOT NULL DEFAULT false,
     purchased_min_limit integer NOT NULL,
     purchased_max_limit integer NOT NULL,
@@ -106,18 +108,13 @@ CREATE TABLE projects (
 --     project_address text NOT NULL,
 --     user_address text NOT NULL,
 -- )
--- store user invest evnets
-CREATE TABLE project_addresses (
-    project_name text NOT NULL,
-    project_address text NOT NULL,
-    PRIMARY KEY (project_name)
-)
+
 -- store user invest evnets
 CREATE TABLE user_invest_events (
     id serial NOT NULL,
     tx_hash text NOT NULL,
     project_address text NOT NULL,
-    user text NOT NULL,
-    amount numeric NOT NULL,
-    invest_time timestamp with time zone,
+    invest_user text NOT NULL,
+    invest_amount numeric NOT NULL,
+    invest_time timestamp with time zone
 )
