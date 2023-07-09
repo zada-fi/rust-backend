@@ -629,10 +629,13 @@ pub async fn get_project_by_name(rb:&Rbatis,project_name: String) -> anyhow::Res
     Ok(project)
 }
 pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<String>> {
-    let db_projects: HashMap<String, String> = rb
+    let db_projects: Option<HashMap<String, String>> = rb
         .query_decode("select distinct project_address from projects",vec![])
         .await?;
-    let projects = db_projects.iter().map(|(_k,addr)| addr.clone()).collect::<Vec<_>>();
+    if db_projects.is_none() {
+        return Ok(vec![]);
+    }
+    let projects = db_projects.unwrap().iter().map(|(_k,addr)| addr.clone()).collect::<Vec<_>>();
     Ok(projects)
 }
 pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<ProjectInfo>)> {

@@ -33,8 +33,9 @@ impl TickSummaryTask {
         }
     }
     pub async fn calc_usd_amount(&self,data:&EventStatData)->anyhow::Result<BigDecimal> {
+        //maybe pools not pair with neither usdc nor eth
         let (price,x_price) = db::get_pool_usd_price(
-            &self.db,data.pair_address.clone()).await?;
+            &self.db,data.pair_address.clone()).await.unwrap_or((BigDecimal::from(0),false));
         let (x_decimals,y_decimals) = db::get_token_decimals_in_pool(
             &self.db,data.pair_address.clone()).await?;
         let x_pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(x_decimals as u32).to_string()).unwrap();
