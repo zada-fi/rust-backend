@@ -67,10 +67,15 @@ pub struct ProjectCreatedEvent {
     pub project_address:Address,
 }
 #[derive(Debug, Clone)]
-pub struct UserInvestEvent {
+pub struct ProjectEvent {
     pub meta: EventData,
+    pub op_type: i8,
     pub user:Address,
     pub amount:Uint,
+}
+pub enum ProjectEventType {
+    Invest = 1,
+    Claim,
 }
 impl PairEvent {
     pub fn get_pair_address(&self) ->Address {
@@ -175,6 +180,7 @@ impl EventType {
         }
     }
 }
+
 impl TryFrom<Log> for PairCreatedEvent {
     type Error = ethabi::Error;
 
@@ -298,7 +304,32 @@ impl TryFrom<Log> for ProjectCreatedEvent {
         })
     }
 }
-impl TryFrom<Log> for UserInvestEvent {
+impl ProjectEventType {
+    pub fn from_log_topic(topic: H256) -> Self {
+        let topics = ChainWatcher::get_launchpad_topics();
+        let invest_topic = topics.get("invest").unwrap().clone();
+        let claim_topic = topics.get("claim").unwrap().clone();
+        if topic == invest_topic {
+            Self::Invest
+        } else if topic == claim_topic {
+            Self::Claim
+        } else {
+            panic!("Unreachable")
+        }
+    }
+    pub fn from_u8(v: u8) -> Self {
+        match v {
+            1 => {
+                Self::Invest
+            },
+            2 => {
+                Self::Claim
+            },
+            _ => { panic!("Unreachable!") }
+        }
+    }
+}
+impl TryFrom<Log> for ProjectEvent {
     type Error = ethabi::Error;
 
     fn try_from(event: Log) -> Result<Self, Self::Error> {
@@ -306,6 +337,7 @@ impl TryFrom<Log> for UserInvestEvent {
             address: event.address,
             tx_hash: event.transaction_hash.unwrap_or_default()
         };
+        let op_type = ProjectEventType::from_log_topic(event.topics[0]);
         let dec_ev = decode(
             &[
                 ParamType::Address,
@@ -313,8 +345,9 @@ impl TryFrom<Log> for UserInvestEvent {
             ],
             &event.data.0,
         )?;
-        Ok(UserInvestEvent {
+        Ok(ProjectEvent {
             meta,
+            op_type: op_type as i8,
             user: dec_ev[0].clone().into_address().unwrap(),
             amount: dec_ev[1].clone().into_uint().unwrap(),
         })

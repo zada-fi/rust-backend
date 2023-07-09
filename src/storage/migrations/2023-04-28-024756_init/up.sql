@@ -110,11 +110,12 @@ CREATE TABLE projects (
 -- )
 
 -- store user invest evnets
-CREATE TABLE user_invest_events (
+CREATE TABLE project_events (
     id serial NOT NULL,
     tx_hash text NOT NULL,
     project_address text NOT NULL,
-    invest_user text NOT NULL,
-    invest_amount numeric NOT NULL,
-    invest_time timestamp with time zone
+    op_type integer NOT NULL, --1:invest,2: claim
+    op_user text NOT NULL,
+    op_amount numeric NOT NULL,
+    op_time timestamp with time zone
 )

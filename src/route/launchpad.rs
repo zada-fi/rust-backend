@@ -35,6 +35,7 @@ pub struct ProjectInfo {
     pub(crate) created_time: String,
     pub(crate) last_updated_time: String,
     pub(crate) paused: bool,
+    pub(crate) total_raised: String,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ClaimableProject {
@@ -322,6 +323,7 @@ pub async fn get_all_claimable_tokens(
     let qs = QString::from(query_str);
     let user_addr = qs.get("address").unwrap();
     let pg_no = qs.get("pg_no").unwrap_or("0").parse::<i32>().unwrap();
+    let user_addr = user_addr.trim_start_matches("0x").to_ascii_lowercase();
     match db::get_claimable_tokens_by_page_number(&rb,pg_no,user_addr.to_string()).await {
         Ok((pg_count,projects)) => {
             let resp = BackendResponse {

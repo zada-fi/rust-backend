@@ -1,5 +1,5 @@
 use rbatis::Rbatis;
-use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStatData, PairStatInfo, EventInfo, Project, TvlStat, VolumeStat, PairTvlStatInfo, HistoryStatInfo, UserInvest, LaunchpadStatInfo};
+use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStatData, PairStatInfo, EventInfo, Project, TvlStat, VolumeStat, PairTvlStatInfo, HistoryStatInfo, LaunchpadStatInfo, StoredProjectEvent};
 use num::{ToPrimitive, BigUint};
 use std::collections::HashMap;
 use crate::watcher::event::PairEvent;
@@ -15,7 +15,7 @@ use anyhow::format_err;
 use crate::route::launchpad::{ProjectInfo, ProjectLink, ClaimableProject};
 use rbatis::rbdc::json::Json;
 use serde_json::Value;
-use std::ops::Mul;
+use std::ops::{Mul, Div};
 
 pub(crate) mod tables;
 const PAGE_SIZE:i32 = 10;
@@ -647,13 +647,18 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
     let quo = projects_count / PAGE_SIZE as usize;
     let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
 
-    let ret = projects.iter().map(|p| {
+    let mut ret = Vec::new();
+    for p in projects.iter() {
         println!("project_links is {}",p.project_links);
         let links_str = &p.project_links.0[..];
         let project_links: Value = serde_json::from_str(
             links_str.trim_start_matches('"')
                 .trim_end_matches('"')).unwrap();
-        ProjectInfo {
+        let total_raised: Decimal = rb
+            .query_decode("select sum(op_amount) as total_raised from project_events where project_address = ? and op_type = 1",
+                          vec![rbs::to_value!(p.project_address.clone())])
+            .await.unwrap_or(Decimal::from_str("0").unwrap());
+        let project = ProjectInfo {
             project_name: p.project_name.clone(),
             project_description: p.project_description.clone(),
             project_links: serde_json::from_value(project_links).unwrap(),
@@ -670,9 +675,11 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
             purchased_max_limit: p.purchased_max_limit,
             created_time: p.created_time.to_string(),
             last_updated_time: p.last_updated_time.clone().unwrap_or(DateTime::from_timestamp(0)).to_string(),
-            paused: p.paused
-        }
-    }).collect::<Vec<_>>();
+            paused: p.paused,
+            total_raised: total_raised.0.to_string(),
+        };
+        ret.push(project);
+    };
     Ok((pg_count,ret))
 }
 pub(crate) async fn update_project_addresses(rb: &mut Rbatis, addresses: HashMap<String,String>)
@@ -703,36 +710,55 @@ pub(crate) async fn update_project_addresses(rb: &mut Rbatis, addresses: HashMap
     // tx.commit().await?;
     Ok(())
 }
-pub(crate) async fn save_user_invests(rb: &mut Rbatis, user_invests: Vec<UserInvest>) -> anyhow::Result<()> {
+pub(crate) async fn save_project_events(rb: &mut Rbatis, events: Vec<StoredProjectEvent>) -> anyhow::Result<()> {
     let mut tx = rb
         .acquire_begin()
         .await?;
-    for invest in user_invests {
-        UserInvest::insert(&mut tx, &invest).await?;
+    for event in events {
+        StoredProjectEvent::insert(&mut tx, &event).await?;
     }
     tx.commit().await?;
     Ok(())
 }
 pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: String ) -> anyhow::Result<(usize,Vec<ClaimableProject>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
-    let claimable_projects: HashMap<String,Decimal> = rb
-        .query_decode("select project_address,sum(invest_amount) as total_amount from user_invest_events  \
-         where invest_user = ? group by p.project_address offset ? limit ? ",
+    let user_invest_projects:Vec<HashMap<String,String>> = rb
+        .query_decode("select project_address,sum(op_amount) as invest_amount from project_events  \
+         where op_user = ? and op_type = 1 group by project_address offset ? limit ? ",
                       vec![rbs::to_value!(addr.clone()),rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
-    let projects_count: usize = rb
-        .query_decode("select count(1) from user_invest_events where invest_user = ?",vec![rbs::to_value!(addr)]).await?;
-    let quo = projects_count / PAGE_SIZE as usize;
-    let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
-
     let mut ret = Vec::new();
-    for (project_address,total_amount) in claimable_projects {
-        let project:Project = rb.query_decode("select * from projects where \
+    for user_invest_project in user_invest_projects.iter() {
+        let project_address = user_invest_project.get("project_address").unwrap();
+        let invest_amount = BigDecimal::from_str(
+            &user_invest_project.get("invest_amount").unwrap()).unwrap();
+        let project:Option<Project> = rb.query_decode("select * from projects where \
             project_address = ?",vec![rbs::to_value!(project_address)]).await?;
-
-        let token_price_usd = BigDecimal::from_str(&project.token_price_usd.0.to_string()).unwrap();
-        let total_claimable_amount = BigDecimal::from_str(&total_amount.0.to_string()).unwrap();
-        let claimable_amount = token_price_usd.mul(total_claimable_amount);
+        //the project should exist
+        if project.is_none() {
+            println!("project {} is not exist in db",project_address);
+            continue;
+        }
+        let project = project.unwrap();
+        //todo:for simple,we only check whether the user has claimed or not
+        // let claimed_amount:Decimal = rb.query_decode("select sum(op_amount) as claimed_amount from project_events  \
+        //  where op_user = ? and op_type = 2 and project_address = ?",
+        //                   vec![rbs::to_value!(addr.clone()),rbs::to_value!(project_address)])
+        //     .await?;
+        // let claimable_amount = invest_amount - claimed_amount;
+        let claimed:bool = rb.query_decode("select count(1) > 1 from project_events  \
+            where op_user = ? and op_type = 2 and project_address = ?",
+                          vec![rbs::to_value!(addr.clone()),rbs::to_value!(project_address)])
+            .await?;
+        let claimable_amount = if claimed {
+            BigDecimal::from(0)
+        }else {
+            let token_price_usd = BigDecimal::from_str(&project.token_price_usd.0.to_string()).unwrap();
+            //todo:should get decimals from token contract,since use usdc as receive_token,for simple just use 18
+            let pow_decimals = BigDecimal::from_str(&BigUint::from(10u32).pow(18).to_string()).unwrap();
+            let real_usdc_amount = invest_amount.div(pow_decimals);
+            token_price_usd.mul(real_usdc_amount)
+        };
         let claimable_project = ClaimableProject {
             project_name: project.project_name,
             token_symbol: project.token_symbol,
@@ -740,18 +766,24 @@ pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: Stri
             claim_start_time: project.end_time.to_string()
         };
         ret.push(claimable_project);
+
     }
-    Ok((pg_count,ret))
+    let projects_count: usize = rb
+        .query_decode("select count(1) from project_events where op_user = ? and op_type = 1",vec![rbs::to_value!(addr)]).await?;
+    let quo = projects_count / PAGE_SIZE as usize;
+    let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
+
+    Ok((0,ret))
 }
 pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<LaunchpadStatInfo> {
     let projects_count: usize = rb
         .query_decode("select count(1) from projects",vec![]).await?;
     let users_count: usize = rb
-        .query_decode("select count(distinct invest_user) from user_invest_events",
+        .query_decode("select count(distinct op_user) from project_events",
                       vec![])
         .await?;
     let total_invest_amount: Decimal = rb
-        .query_decode("select sum(invest_amount) from user_invest_events",vec![]).await?;
+        .query_decode("select sum(op_amount) from project_events",vec![]).await?;
 
     let stat_info = LaunchpadStatInfo {
         projects_count,

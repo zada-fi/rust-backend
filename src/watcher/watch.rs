@@ -5,7 +5,7 @@ use web3::{
     Web3,
 };
 use crate::config::BackendConfig;
-use crate::db::tables::{PoolInfo, Token, PriceCumulativeLast, EventHash, UserInvest};
+use crate::db::tables::{PoolInfo, Token, PriceCumulativeLast, EventHash, StoredProjectEvent};
 use crate::db;
 use web3::types::{H160, H256};
 use web3::transports::Http;
@@ -18,7 +18,7 @@ use anyhow::format_err;
 use web3::contract::{Contract, Options};
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
-use crate::watcher::event::{PairCreatedEvent, PairEvent, EventType, ProjectCreatedEvent, UserInvestEvent};
+use crate::watcher::event::{PairCreatedEvent, PairEvent, EventType, ProjectCreatedEvent, ProjectEventType, ProjectEvent};
 use crate::token_price::ETH_ADDRESS;
 
 const FACTORY_EVENTS: &str = include_str!("../abi/factory_abi.json");
@@ -173,14 +173,18 @@ impl ChainWatcher {
             .event("UserInvestment")
             .expect("launchpad contract abi error")
             .signature();
+        let user_claim_topic = launchpad_contract
+            .event("UserClaim")
+            .expect("launchpad contract abi error")
+            .signature();
 
         topics.insert(String::from("create_project"),H256::from(create_project_topic.0));
-        topics.insert(String::from("user_invest"),H256::from(user_invest_topic.0));
+        topics.insert(String::from("invest"),H256::from(user_invest_topic.0));
+        topics.insert(String::from("claim"),H256::from(user_claim_topic.0));
         topics
     }
 
     pub async fn get_price_cumulative_last(&mut self, pair_address: H160) ->anyhow::Result<()> {
-        println!("get price of pool {:?}",pair_address);
         //get from chain
         let pair_contract_abi = ethabi::Contract::load(PAIR_EVENTS.as_bytes()).unwrap();
         let pair_contract = Contract::new(self.web3.eth(), pair_address, pair_contract_abi);
@@ -355,23 +359,25 @@ impl ChainWatcher {
         &mut self,
         from: u64,
         to: u64,
+        op_type: &str,
     ) -> anyhow::Result<()> {
-        let topics = vec![self.launchpad_topics.get("user_invest").unwrap().clone()];
+        let topics = vec![self.launchpad_topics.get(op_type).unwrap().clone()];
         //if the addresses of the filter is empty,it will filter only by topics,finally will get the
         //other contract's events with the same topics
         if self.all_projects.is_empty() {
             return Ok(());
         }
-        let logs: Vec<UserInvestEvent> = self.sync_events(from,to, self.all_projects.clone(), topics).await?;
+        let logs: Vec<ProjectEvent> = self.sync_events(from,to, self.all_projects.clone(), topics).await?;
         if !logs.is_empty() {
-            let invest_events = logs.iter().map(|l| UserInvest {
+            let project_events = logs.iter().map(|l| StoredProjectEvent {
                 tx_hash: hex::encode(l.meta.tx_hash.as_bytes()),
                 project_address: hex::encode(l.meta.address.as_bytes()),
-                invest_user: hex::encode(l.user.as_bytes()),
-                invest_amount: Decimal::from_str(&l.amount.to_string()).unwrap(),
-                invest_time: None
+                op_type: l.op_type,
+                op_user: hex::encode(l.user.as_bytes()),
+                op_amount: Decimal::from_str(&l.amount.to_string()).unwrap(),
+                op_time: None
             }).collect::<Vec<_>>();
-            db::save_user_invests(&mut self.db, invest_events).await?;
+            db::save_project_events(&mut self.db, project_events).await?;
         }
         Ok(())
     }
@@ -420,20 +426,23 @@ impl ChainWatcher {
         let mut start_block = last_synced_block + 1;
         let mut end_block;
         let pair_event_types = vec!["mint","burn","swap","sync"];
+        let project_event_types = vec!["invest","claim"];
         loop {
             end_block = cmp::min(chain_block_number,start_block + sync_step);
             if start_block > end_block {
                 break;
             }
-            // self.sync_pair_created_events(start_block,end_block).await?;
-            // if !self.all_pairs.is_empty() {
-            //     for pair_event_type in &pair_event_types {
-            //         self.sync_pair_events(start_block, end_block, pair_event_type).await?;
-            //     }
-            // }
+            self.sync_pair_created_events(start_block,end_block).await?;
+            if !self.all_pairs.is_empty() {
+                for pair_event_type in &pair_event_types {
+                    self.sync_pair_events(start_block, end_block, pair_event_type).await?;
+                }
+            }
             self.sync_project_created_events(start_block,end_block).await?;
             if !self.all_projects.is_empty() {
-                self.sync_project_events(start_block,end_block).await?;
+                for event_type in &project_event_types {
+                    self.sync_project_events(start_block, end_block, event_type).await?;
+                }
             }
             start_block = end_block + 1;
             db::upsert_last_sync_block(

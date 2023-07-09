@@ -154,12 +154,13 @@ pub struct Project {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct UserInvest {
+pub struct StoredProjectEvent {
     pub(crate) tx_hash: String,
     pub(crate) project_address: String,
-    pub(crate)  invest_user: String,
-    pub(crate) invest_amount: Decimal,
-    pub(crate) invest_time: Option<DateTime>
+    pub(crate) op_type: i8, //1: invest,2: claim
+    pub(crate) op_user: String,
+    pub(crate) op_amount: Decimal,
+    pub(crate) op_time: Option<DateTime>
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LaunchpadStatInfo {
@@ -177,7 +178,7 @@ rbatis::crud!(TvlStat {}, "tvl_stats");
 rbatis::crud!(VolumeStat {}, "volume_stats");
 rbatis::crud!(HistoryStatInfo {}, "history_stats");
 rbatis::crud!(Project {}, "projects");
-rbatis::crud!(UserInvest {}, "user_invest_events");
+rbatis::crud!(StoredProjectEvent {}, "project_events");
 
 impl Default for Project {
     fn default() -> Self {
