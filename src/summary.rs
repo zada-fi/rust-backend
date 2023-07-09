@@ -10,8 +10,6 @@ use crate::db::tables::{EventStatData, TvlStat, VolumeStat, HistoryStatInfo};
 use rbatis::rbdc::date::Date;
 use crate::db_decimal_to_big;
 use num::BigUint;
-use std::ops::Add;
-use std::collections::HashMap;
 
 pub struct TickSummaryTask {
     pub db: rbatis::Rbatis,
@@ -74,7 +72,7 @@ impl TickSummaryTask {
             }
 
             for tvl in pre_tvls.iter() {
-                if let Some(new_tvl) = tvl_stats.iter().find(|s| s.pair_address == tvl.pair_address) {
+                if let Some(_) = tvl_stats.iter().find(|s| s.pair_address == tvl.pair_address) {
                     continue;
                 } else {
                     total_tvl_by_day += BigDecimal::from_str(&tvl.usd_tvl.0.to_string()).unwrap();

@@ -12,8 +12,7 @@ use rbatis::rbdc::datetime::DateTime;
 use rbatis::rbdc::date::Date;
 use chrono::{Utc, NaiveDate, Days};
 use anyhow::format_err;
-use crate::route::launchpad::{ProjectInfo, ProjectLink, ClaimableProject};
-use rbatis::rbdc::json::Json;
+use crate::route::launchpad::{ProjectInfo, ClaimableProject};
 use serde_json::Value;
 use std::ops::{Mul, Div};
 
@@ -607,18 +606,18 @@ pub(crate) async fn save_history_stat(rb: &mut Rbatis, stat: HistoryStatInfo) ->
             ]).await?;
     Ok(())
 }
-pub(crate) async fn save_history_stats(rb: &Rbatis, stats: Vec<HistoryStatInfo>) -> anyhow::Result<()> {
-    let mut tx = rb
-        .acquire_begin()
-        .await?;
-
-    for stat in stats {
-        HistoryStatInfo::insert(&mut tx, &stat)
-            .await?;
-    }
-    tx.commit().await?;
-    Ok(())
-}
+// pub(crate) async fn save_history_stats(rb: &Rbatis, stats: Vec<HistoryStatInfo>) -> anyhow::Result<()> {
+//     let mut tx = rb
+//         .acquire_begin()
+//         .await?;
+//
+//     for stat in stats {
+//         HistoryStatInfo::insert(&mut tx, &stat)
+//             .await?;
+//     }
+//     tx.commit().await?;
+//     Ok(())
+// }
 pub(crate) async fn save_project(rb: &mut Rbatis, project: &Project) -> anyhow::Result<()> {
     Project::insert(rb,project).await?;
     Ok(())
@@ -633,7 +632,7 @@ pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<String>> {
     let db_projects: HashMap<String, String> = rb
         .query_decode("select distinct project_address from projects",vec![])
         .await?;
-    let projects = db_projects.iter().map(|(k,addr)| addr.clone()).collect::<Vec<_>>();
+    let projects = db_projects.iter().map(|(_k,addr)| addr.clone()).collect::<Vec<_>>();
     Ok(projects)
 }
 pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<ProjectInfo>)> {
@@ -773,7 +772,7 @@ pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: Stri
     let quo = projects_count / PAGE_SIZE as usize;
     let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
 
-    Ok((0,ret))
+    Ok((pg_count,ret))
 }
 pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<LaunchpadStatInfo> {
     let projects_count: usize = rb

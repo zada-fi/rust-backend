@@ -18,7 +18,7 @@ use anyhow::format_err;
 use web3::contract::{Contract, Options};
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
-use crate::watcher::event::{PairCreatedEvent, PairEvent, EventType, ProjectCreatedEvent, ProjectEventType, ProjectEvent};
+use crate::watcher::event::{PairCreatedEvent, PairEvent, EventType, ProjectCreatedEvent, ProjectEvent};
 use crate::token_price::ETH_ADDRESS;
 
 const FACTORY_EVENTS: &str = include_str!("../abi/factory_abi.json");
