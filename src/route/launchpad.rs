@@ -9,6 +9,7 @@ use rbatis::rbdc::json::Json;
 use std::str::FromStr;
 use rbatis::rbdc::datetime::DateTime;
 use qstring::QString;
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProjectLink {
     pub(crate) web_url: String,
@@ -263,7 +264,7 @@ pub async fn get_all_projects(
     let rb = data.db.clone();
     let query_str = req.query_string();
     let qs = QString::from(query_str);
-    let pg_no = qs.get("pg_no").unwrap_or("0").parse::<i32>().unwrap_or(1);
+    let pg_no = qs.get("pg_no").unwrap_or("1").parse::<i32>().unwrap();
     match db::get_projects_by_page_number(&rb,pg_no).await {
         Ok((pg_count,projects)) => {
             let resp = BackendResponse {
@@ -321,8 +322,18 @@ pub async fn get_all_claimable_tokens(
     let rb = data.db.clone();
     let query_str = req.query_string();
     let qs = QString::from(query_str);
-    let user_addr = qs.get("address").unwrap();
-    let pg_no = qs.get("pg_no").unwrap_or("0").parse::<i32>().unwrap();
+    let user_addr = match qs.get("address") {
+        Some(addr) => addr.to_owned(),
+        None => {
+            let resp = BackendResponse {
+                code: BackendError::InvalidParameters,
+                error: Some("Not input address".to_string()),
+                data: None::<()>,
+            };
+            return Ok(HttpResponse::Ok().json(resp));
+        }
+    };
+    let pg_no = qs.get("pg_no").unwrap_or("1").parse::<i32>().unwrap();
     let user_addr = user_addr.trim_start_matches("0x").to_ascii_lowercase();
     match db::get_claimable_tokens_by_page_number(&rb,pg_no,user_addr.to_string()).await {
         Ok((pg_count,projects)) => {
