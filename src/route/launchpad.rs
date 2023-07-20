@@ -29,9 +29,9 @@ pub struct ProjectInfo {
     pub(crate) token_price_usd: String,
     pub(crate) start_time: String,
     pub(crate) end_time: String,
-    pub(crate) raise_limit: i32,
-    pub(crate) purchased_min_limit: i32,
-    pub(crate) purchased_max_limit: i32,
+    pub(crate) raise_limit: String,
+    pub(crate) purchased_min_limit: String,
+    pub(crate) purchased_max_limit: String,
     pub(crate) created_time: String,
     pub(crate) last_updated_time: String,
     pub(crate) paused: bool,
@@ -56,9 +56,9 @@ pub struct CreateProjectReq {
     pub(crate) token_price_usd: String,
     pub(crate) start_time: String,
     pub(crate) end_time: String,
-    pub(crate) raise_limit: i32,
-    pub(crate) purchased_min_limit: i32,
-    pub(crate) purchased_max_limit: i32,
+    pub(crate) raise_limit: String,
+    pub(crate) purchased_min_limit: String,
+    pub(crate) purchased_max_limit: String,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct UpdateProjectReq {
@@ -93,9 +93,9 @@ pub async fn create_project(
         token_price_usd: Decimal::from_str(&msg.token_price_usd).unwrap(),
         start_time: DateTime::from_str(&msg.start_time).unwrap(),
         end_time: DateTime::from_str(&msg.end_time).unwrap(),
-        raise_limit: msg.raise_limit,
-        purchased_min_limit: msg.purchased_min_limit,
-        purchased_max_limit: msg.purchased_max_limit,
+        raise_limit: msg.raise_limit.clone(),
+        purchased_min_limit: msg.purchased_min_limit.clone(),
+        purchased_max_limit: msg.purchased_max_limit.clone(),
         created_time: DateTime::now(),
         last_updated_time: None,
         paused: false
@@ -156,19 +156,19 @@ pub async fn update_project(
         },
         "max_cap" => {
             Project {
-                raise_limit: msg.update_value.parse::<i32>().unwrap(),
+                raise_limit: msg.update_value.clone(),
                 ..old_project.clone()
             }
         },
         "user_max_cap" => {
             Project {
-                purchased_max_limit: msg.update_value.parse::<i32>().unwrap(),
+                purchased_max_limit: msg.update_value.clone(),
                 ..old_project.clone()
             }
         },
         "user_min_cap" => {
             Project {
-                purchased_min_limit: msg.update_value.parse::<i32>().unwrap(),
+                purchased_min_limit: msg.update_value.clone(),
                 ..old_project.clone()
             }
         },
@@ -263,7 +263,7 @@ pub async fn get_all_projects(
     let rb = data.db.clone();
     let query_str = req.query_string();
     let qs = QString::from(query_str);
-    let pg_no = qs.get("pg_no").unwrap_or("0").parse::<i32>().unwrap();
+    let pg_no = qs.get("pg_no").unwrap_or("0").parse::<i32>().unwrap_or(1);
     match db::get_projects_by_page_number(&rb,pg_no).await {
         Ok((pg_count,projects)) => {
             let resp = BackendResponse {

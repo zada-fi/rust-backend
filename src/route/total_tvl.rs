@@ -4,15 +4,23 @@ use crate::db;
 use crate::route::BackendResponse;
 use crate::route::err::BackendError;
 use rbatis::rbdc::decimal::Decimal;
+use bigdecimal::BigDecimal;
+use std::str::FromStr;
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct RespTvlStatInfo {
     pub tvl_date: String,
     pub tvl_value: Decimal,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-struct RespVolumeStatInfo {
+struct InnerRespVolumeStatInfo {
     pub volume_date: String,
     pub volume_value: Decimal,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct RespVolumeStatInfo {
+    pub total_volume: Decimal,
+    pub stat_infos: Vec<InnerRespVolumeStatInfo>,
 }
 pub async fn get_total_tvl_by_day(
     data: web::Data<AppState>,
@@ -52,10 +60,16 @@ pub async fn get_total_volume_by_day(
     let rb = data.db.clone();
     match db::get_all_volumes_by_day(&rb).await {
         Ok(pools) => {
-            let ret = pools.iter().map(|p| RespVolumeStatInfo {
+            let total_volume = pools.iter().fold(BigDecimal::from(0),|acc, p|
+                acc + BigDecimal::from_str(&p.1.0.to_string()).unwrap());
+            let stat_infos = pools.iter().map(|p| InnerRespVolumeStatInfo {
                 volume_date: p.0.to_string(),
                 volume_value: p.1.clone()
             }).collect::<Vec<_>>();
+            let ret = RespVolumeStatInfo {
+                total_volume: Decimal::from_str(&total_volume.to_string()).unwrap(),
+                stat_infos,
+            };
             let resp = BackendResponse {
                 code: BackendError::Ok,
                 error: None,
