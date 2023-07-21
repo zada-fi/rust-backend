@@ -629,14 +629,17 @@ pub async fn get_project_by_name(rb:&Rbatis,project_name: String) -> anyhow::Res
     Ok(project)
 }
 pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<String>> {
-    let db_projects: Option<HashMap<String, String>> = rb
+    let db_projects: Option<Vec<HashMap<String, String>>> = rb
         .query_decode("select distinct project_address from projects",vec![])
         .await?;
     if db_projects.is_none() {
         return Ok(vec![]);
     }
-    let projects = db_projects.unwrap().iter().map(|(_k,addr)| addr.clone()).collect::<Vec<_>>();
-    Ok(projects)
+    let mut ret = Vec::new();
+    for p in db_projects.unwrap() {
+        ret.push(p.get("project_address").unwrap().to_owned());
+    }
+    Ok(ret)
 }
 pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<ProjectInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
