@@ -340,7 +340,7 @@ impl ChainWatcher {
                      event.project_name,
                      hex::encode(event.project_address));
             self.all_projects.push(event.project_address);
-            let addr = hex::encode(event.project_address);
+            let addr = format!("0x{}",hex::encode(event.project_address));
             project_addresses.insert(event.project_name,addr);
         }
         // todo: should use another task to save in batches

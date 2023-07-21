@@ -583,14 +583,14 @@ pub async fn get_all_tvls_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,Decim
     let all_tvls: Vec<HistoryStatInfo> = rb
         .query_decode("select * from history_stats order by stat_date desc", vec![]).await?;
     let ret = all_tvls.iter().map(|t|
-        (t.stat_date.to_string(), t.usd_tvl.clone())).collect::<Vec<_>>();
+        (t.stat_date.0.to_string(), t.usd_tvl.clone())).collect::<Vec<_>>();
     Ok(ret)
 }
 pub async fn get_all_volumes_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,Decimal)>> {
     let all_tvls: Vec<HistoryStatInfo> = rb
         .query_decode("select * from history_stats order by stat_date desc", vec![]).await?;
     let ret = all_tvls.iter().map(|t|
-        (t.stat_date.to_string(), t.usd_volume.clone())).collect::<Vec<_>>();
+        (t.stat_date.0.to_string(), t.usd_volume.clone())).collect::<Vec<_>>();
     Ok(ret)
 }
 pub(crate) async fn save_history_stat(rb: &mut Rbatis, stat: HistoryStatInfo) -> anyhow::Result<()> {
