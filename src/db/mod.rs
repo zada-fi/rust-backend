@@ -766,9 +766,10 @@ pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: Stri
         };
         let claimable_project = ClaimableProject {
             project_name: project.project_name,
+            project_address: project_address.clone(),
             token_symbol: project.token_symbol,
             claimable_amount: claimable_amount.to_string(),
-            claim_start_time: project.end_time.to_string()
+            claim_start_time: project.end_time.0.to_string()
         };
         ret.push(claimable_project);
 

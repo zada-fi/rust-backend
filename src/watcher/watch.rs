@@ -371,7 +371,7 @@ impl ChainWatcher {
         if !logs.is_empty() {
             let project_events = logs.iter().map(|l| StoredProjectEvent {
                 tx_hash: hex::encode(l.meta.tx_hash.as_bytes()),
-                project_address: hex::encode(l.meta.address.as_bytes()),
+                project_address: format!("0x{}",hex::encode(l.meta.address.as_bytes())),
                 op_type: l.op_type,
                 op_user: hex::encode(l.user.as_bytes()),
                 op_amount: Decimal::from_str(&l.amount.to_string()).unwrap(),

@@ -41,6 +41,7 @@ pub struct ProjectInfo {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ClaimableProject {
     pub(crate) project_name: String,
+    pub(crate) project_address: String,
     pub(crate) token_symbol: String,
     pub(crate) claimable_amount: String,
     pub(crate) claim_start_time: String,
