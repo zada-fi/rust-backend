@@ -22,6 +22,8 @@ pub struct ProjectInfo {
     pub(crate) project_name: String,
     pub(crate) project_description: String,
     pub(crate) project_links: ProjectLink,
+    pub(crate) project_title: String,
+    pub(crate) project_pic_url: String,
     pub(crate) project_address: String,
     pub(crate) project_owner: String,
     pub(crate) receive_token: String,
@@ -50,6 +52,8 @@ pub struct ClaimableProject {
 pub struct CreateProjectReq {
     pub(crate) project_name: String,
     pub(crate) project_description: String,
+    pub(crate) project_pic_url: String,
+    pub(crate) project_title: String,
     pub(crate) project_links: ProjectLink,
     pub(crate) project_owner: String,
     pub(crate) receive_token: String,
@@ -86,6 +90,8 @@ pub async fn create_project(
     let db_project = Project {
         project_name: msg.project_name.clone(),
         project_description: msg.project_description.clone(),
+        project_pic_url: msg.project_pic_url.clone(),
+        project_title: msg.project_title.clone(),
         project_links: Json::from_str(&serde_json::to_string(&msg.project_links).unwrap()).unwrap(),
         project_address: None,
         project_owner: msg.project_owner.clone(),
@@ -153,6 +159,18 @@ pub async fn update_project(
         "links" => {
             Project {
                 project_links: Json::from_str(&msg.update_value).unwrap(),
+                ..old_project.clone()
+            }
+        },
+        "pic_url" => {
+            Project {
+                project_pic_url: msg.update_value.clone(),
+                ..old_project.clone()
+            }
+        },
+        "title" => {
+            Project {
+                project_title: msg.update_value.clone(),
                 ..old_project.clone()
             }
         },

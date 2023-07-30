@@ -136,6 +136,8 @@ pub struct Project {
     // pub(crate) id: i32,
     pub(crate)  project_name: String,
     pub(crate) project_description: String,
+    pub(crate) project_pic_url: String,
+    pub(crate) project_title: String,
     pub(crate)  project_links: Json,
     pub(crate)  project_address: Option<String>,
     pub(crate)  project_owner: String,
@@ -185,6 +187,8 @@ impl Default for Project {
         Self {
             project_name: "".to_string(),
             project_description: "".to_string(),
+            project_pic_url: "".to_string(),
+            project_title: "".to_string(),
             project_links: Default::default(),
             project_address: None,
             project_owner: "".to_string(),

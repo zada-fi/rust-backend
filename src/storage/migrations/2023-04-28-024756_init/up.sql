@@ -83,6 +83,8 @@ CREATE TABLE history_stats (
 CREATE TABLE projects (
     project_name text NOT NULL,
     project_description text,
+    project_pic_url text,
+    project_title text,
     project_links json,
     project_address text,
     project_owner text NOT NULL,

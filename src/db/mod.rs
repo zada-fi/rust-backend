@@ -546,9 +546,16 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
         pool_info p left join tvl_ret s on p.pair_address = s.pair_address \
         where s.usd_tvl is not null order by s.usd_tvl desc offset ? limit ?", vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
+    let pools_count: usize = rb
+        .query_decode("with tvl_ret as (
+        select s.* from (select *, row_number() over (partition by tvl_stats.pair_address
+        order by  tvl_stats.stat_date  desc) as group_idx
+        from  tvl_stats) s where s.group_idx = 1)
+        select count(1) from \
+        pool_info p left join tvl_ret s on p.pair_address = s.pair_address \
+        where s.usd_tvl is not null", vec![])
+        .await?;
     let mut ret = Vec::new();
-    let pools_count: usize = pools_tvl_stat.len();
-    println!("pools count is {}",pools_count);
     for tvl_stat in pools_tvl_stat {
         let pool_day_volume: HashMap<String,Decimal> = rb
             .query_decode("select coalesce(sum(usd_volume),0) as total_usd_volume from volume_stats where \
@@ -666,6 +673,7 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
         let project = ProjectInfo {
             project_name: p.project_name.clone(),
             project_description: p.project_description.clone(),
+            project_pic_url: p.project_pic_url.clone(),
             project_links: serde_json::from_value(project_links).unwrap(),
             project_address: p.project_address.clone().unwrap_or_default(),
             project_owner: p.project_owner.clone(),
@@ -682,6 +690,7 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
             last_updated_time: p.last_updated_time.clone().unwrap_or(DateTime::from_timestamp(0)).to_string(),
             paused: p.paused,
             total_raised: total_raised.0.to_string(),
+            project_title: p.project_title.clone(),
         };
         ret.push(project);
     };
