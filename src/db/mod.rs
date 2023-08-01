@@ -790,6 +790,13 @@ pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: Stri
 
     Ok((pg_count,ret))
 }
+pub(crate) async fn remove_project(rb: &mut Rbatis, project_name: String)
+                                             -> anyhow::Result<()> {
+    rb.exec("delete from projects where project_name = ?",
+            vec![rbs::to_value!(project_name)])
+        .await?;
+    Ok(())
+}
 pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<LaunchpadStatInfo> {
     let projects_count: usize = rb
         .query_decode("select count(1) from projects",vec![]).await?;

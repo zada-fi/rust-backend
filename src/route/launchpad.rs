@@ -72,6 +72,11 @@ pub struct UpdateProjectReq {
     pub update_name: String,
     pub update_value: String,
 }
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct RemoveProjectReq {
+    pub project_name: String,
+}
 pub async fn create_project(
     data: web::Data<AppState>,
     msg: web::Json<CreateProjectReq>,
@@ -275,7 +280,32 @@ pub async fn update_project(
         }
     }
 }
+pub async fn remove_project(
+    data: web::Data<AppState>,
+    msg: web::Json<RemoveProjectReq>,
+) -> actix_web::Result<HttpResponse> {
+    let mut rb = data.db.clone();
+    match db::remove_project(&mut rb,msg.project_name.clone()).await {
+        Ok(()) => {
+            let resp = BackendResponse {
+                code: BackendError::Ok,
+                error: None,
+                data: None::<()>,
+            };
+            Ok(HttpResponse::Ok().json(resp))
+        },
+        Err(e) => {
+            println!("remove project failed {:?}",e);
+            let resp = BackendResponse {
+                code: BackendError::InvalidParameters,
+                error: Some("remove project failed".to_string()),
+                data: None::<()>,
+            };
+            Ok(HttpResponse::Ok().json(resp))
+        }
+    }
 
+}
 pub async fn get_all_projects(
     data: web::Data<AppState>,
     req: HttpRequest,
