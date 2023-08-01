@@ -8,7 +8,7 @@ use crate::route::transactions::get_all_transactions;
 use crate::route::pair_statistic_info::get_pair_statistic_info;
 use crate::route::total_tvl::{get_total_tvl_by_day, get_total_volume_by_day};
 use actix_cors::Cors;
-use crate::route::launchpad::{get_all_projects, create_project, update_project, get_launchpad_stat_info, get_all_claimable_tokens, remove_project};
+use crate::route::launchpad::{get_all_projects, create_project, update_project, get_launchpad_stat_info, get_all_claimable_tokens, remove_project, get_project_info};
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -46,6 +46,7 @@ pub async fn run_rpc_server(app_state: AppState) {
             .route("/update_project", web::post().to(update_project))
             .route("/remove_project", web::post().to(remove_project))
             .route("/get_launchpad_stat_info", web::get().to(get_launchpad_stat_info))
+            .route("/get_project_info", web::get().to(get_project_info))
             .route("/get_user_claimable_tokens",web::get().to(get_all_claimable_tokens))
     })
         .workers(works_number as usize)

@@ -335,7 +335,55 @@ pub async fn get_all_projects(
     }
 
 }
+pub async fn get_project_info(
+    data: web::Data<AppState>,
+    req: HttpRequest,
+) -> actix_web::Result<HttpResponse> {
+    let rb = data.db.clone();
+    let query_str = req.query_string();
+    let qs = QString::from(query_str);
+    if let Some(project_name) = qs.get("project_name") {
+        match db::get_project_by_name(&rb,project_name.to_owned()).await {
+            Ok(ret) => {
+                if let Some(project) = ret {
+                    let resp = BackendResponse {
+                        code: BackendError::Ok,
+                        error: None,
+                        data: Some(project)
+                    };
+                    Ok(HttpResponse::Ok().json(resp))
+                } else {
+                    let resp = BackendResponse {
+                        code: BackendError::InternalErr,
+                        error: Some("project not found".to_string()),
+                        data: None::<()>,
+                    };
+                    Ok(HttpResponse::Ok().json(resp))
+                }
+            },
+            Err(e) => {
+                println!("get_projects from db failed,{:?}",e);
+                let resp = BackendResponse {
+                    code: BackendError::DbErr,
+                    error: Some("get projects failed".to_string()),
+                    data: None::<()>,
+                };
+                Ok(HttpResponse::Ok().json(resp))
+            }
+        }
 
+    } else {
+        let resp = BackendResponse {
+            code: BackendError::InvalidParameters,
+            error: Some("Not input project name".to_string()),
+            data: None::<()>,
+        };
+        Ok(HttpResponse::Ok().json(resp))
+    }
+
+
+
+}
 pub async fn get_launchpad_stat_info(
     data: web::Data<AppState>,
     _req: HttpRequest,
