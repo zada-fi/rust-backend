@@ -10,12 +10,12 @@ use std::str::FromStr;
 use rbatis::rbdc::datetime::DateTime;
 use qstring::QString;
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize,Default)]
 pub struct ProjectLink {
-    pub(crate) web_url: String,
-    pub(crate) twitter_url: String,
-    pub(crate) dc_url: String,
-    pub(crate) tg_url: String,
+    pub(crate) web_url: Option<String>,
+    pub(crate) twitter_url: Option<String>,
+    pub(crate) dc_url: Option<String>,
+    pub(crate) tg_url: Option<String>,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ProjectInfo {
@@ -51,10 +51,10 @@ pub struct ClaimableProject {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CreateProjectReq {
     pub(crate) project_name: String,
-    pub(crate) project_description: String,
-    pub(crate) project_pic_url: String,
-    pub(crate) project_title: String,
-    pub(crate) project_links: ProjectLink,
+    pub(crate) project_description: Option<String>,
+    pub(crate) project_pic_url: Option<String>,
+    pub(crate) project_title: Option<String>,
+    pub(crate) project_links: Option<ProjectLink>,
     pub(crate) project_owner: String,
     pub(crate) receive_token: String,
     pub(crate) token_symbol: String,
@@ -94,10 +94,10 @@ pub async fn create_project(
     }
     let db_project = Project {
         project_name: msg.project_name.clone(),
-        project_description: msg.project_description.clone(),
-        project_pic_url: msg.project_pic_url.clone(),
-        project_title: msg.project_title.clone(),
-        project_links: Json::from_str(&serde_json::to_string(&msg.project_links).unwrap()).unwrap(),
+        project_description: msg.project_description.clone().unwrap_or_default(),
+        project_pic_url: msg.project_pic_url.clone().unwrap_or_default(),
+        project_title: msg.project_title.clone().unwrap_or_default(),
+        project_links: Json::from_str(&serde_json::to_string(&msg.project_links.clone().unwrap_or_default()).unwrap()).unwrap(),
         project_address: None,
         project_owner: msg.project_owner.clone(),
         receive_token: msg.receive_token.clone(),
