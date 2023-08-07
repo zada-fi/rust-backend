@@ -23,12 +23,15 @@ impl TickSummaryTask {
         }
     }
     pub async fn run_tick_summary(mut self) {
-        println!("run_tick_summary");
-        let mut tx_poll = tokio::time::interval(Duration::from_secs(3600));
+        let mut tx_poll = tokio::time::interval(Duration::from_secs(60));
         loop {
             tx_poll.tick().await;
             if let Err(e) = self.statistic_summary().await {
-                println!("statistic_summary failed {:?}",e);
+                log::error!("statistic_summary failed {:?}",e);
+            }
+
+            if let Err(e) = self.statistic_lauchpad_summary().await {
+                log::error!("statistic_lauchpad_summary failed {:?}",e);
             }
         }
     }
@@ -60,7 +63,7 @@ impl TickSummaryTask {
             let mut total_tvl_by_day = BigDecimal::from(0);
             for tvl in tvls.iter(){
                 let usd_amount = self.calc_usd_amount(tvl).await?;
-                println!("pool {:?} tvl : {:?} on day {:?}",tvl.pair_address.clone(),usd_amount,day);
+                //println!("pool {:?} tvl : {:?} on day {:?}",tvl.pair_address.clone(),usd_amount,day);
                 let stat = TvlStat {
                     pair_address: tvl.pair_address.clone(),
                     stat_date: Date::from_str(&tvl.day).unwrap(),
@@ -105,6 +108,12 @@ impl TickSummaryTask {
             // todo:should save history stats on batch
             db::save_history_stat(&mut self.db,history_stat).await?;
         }
+        Ok(())
+    }
+
+    pub async fn statistic_lauchpad_summary(&mut self) ->anyhow::Result<()> {
+        log::info!("statistic_lauchpad_summary");
+        db::summary_launchpad_stat_info(&mut self.db).await?;
         Ok(())
     }
 }

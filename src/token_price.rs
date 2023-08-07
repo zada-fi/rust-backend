@@ -24,14 +24,12 @@ impl TokenPriceTask {
         }
     }
     pub async fn run_tick_price(mut self) {
-        println!("run_tick_price");
         let mut tx_poll = tokio::time::interval(Duration::from_secs(120));
         loop {
             tx_poll.tick().await;
             let tokens = db::get_tokens(&self.db).await.unwrap_or_default();
             for token in tokens {
                 if let Err(e) = self.get_price(token.address).await {
-                    println!("run tick price error occurred {:?}", e);
                     log::error!("run_sync_pair_created_events error occurred {:?}", e);
                 }
             }

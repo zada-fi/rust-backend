@@ -219,7 +219,6 @@ impl TryFrom<Log> for PairEvent {
                     ],
                     &event.data.0,
                 )?;
-                println!("find mint event tx_hash is {} ",hex::encode(meta.tx_hash.as_bytes()));
                 let sender = if event.topics.len() < 2 {
                     H160::zero()
                 } else {

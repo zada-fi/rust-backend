@@ -101,7 +101,6 @@ impl ChainWatcher {
             }
         ]"#;
         let token= db::get_token(&self.db,hex::encode(address.as_bytes())).await?;
-        println!("get token is {:?}",token);
         let token_symbol = if token.is_empty() {
             //get from chain
             let erc20_abi = ethabi::Contract::load(abi_string.as_bytes()).unwrap();
@@ -244,12 +243,11 @@ impl ChainWatcher {
         let web3 = Web3::new(transport);
         let topics = Self::get_topics();
         let launchpad_topics = Self::get_launchpad_topics();
-        println!("launchpad_topics is {:?}",launchpad_topics);
         let pools = db::get_all_store_pools(&db).await?;
         let all_pairs: Vec<H160> = pools.iter().map(|p| H160::from_str(&p.pair_address).unwrap()).collect();
         let projects = db::get_project_addresses(&db).await?;
-        println!("projects is {:?}",projects);
-        let all_projects = projects.iter().map(|p| H160::from_str(&p).unwrap()).collect();
+        let all_projects = projects.iter().filter(|p| !p.is_empty())
+            .map(|p| H160::from_str(&p).unwrap()).collect();
         Ok(Self {
             web3,
             config,
@@ -267,14 +265,14 @@ impl ChainWatcher {
         to: u64,
     ) -> anyhow::Result<()> {
         let create_pair_topic = self.pair_topics.get(&String::from("create_pair")).unwrap().clone();
-        println!("sync_pair_created_events {:?} {:?} {:?}",from,to,create_pair_topic);
+        log::info!("sync_pair_created_events {:?} {:?}",from,to);
         let logs: Vec<PairCreatedEvent> = self.sync_events(from,to,
                          vec![self.config.contract_address],
                          vec![create_pair_topic]).await?;
         for event in logs {
             let token_x_symbol = self.get_token_symbol(event.token0_address).await.unwrap();
             let token_y_symbol = self.get_token_symbol(event.token1_address).await.unwrap();
-            println!("Get PairCreated event : pair_address = {:?}, token0 {} address is {:?}, \
+            log::debug!("Get PairCreated event : pair_address = {:?}, token0 {} address is {:?}, \
             token1 {} address is {:?}",event.pair_address.to_string(),
                      token_x_symbol,
                      hex::encode(event.token0_address),
@@ -311,7 +309,7 @@ impl ChainWatcher {
         //if the addresses of the filter is empty,it will filter only by topics,finally will get the
         //other contract's events with the same topics
         if self.all_pairs.is_empty() {
-            println!("filter pairs is empty");
+            log::debug!("filter pairs is empty");
             return Ok(());
         }
         let logs: Vec<PairEvent> = self.sync_events(from,to, self.all_pairs.clone(), topics).await?;
@@ -327,7 +325,7 @@ impl ChainWatcher {
         to: u64,
     ) -> anyhow::Result<()> {
         let create_project_topic = self.launchpad_topics.get(&String::from("create_project")).unwrap().clone();
-        println!("sync_project_created_events {:?} {:?} {:?}",from,to,create_project_topic);
+        log::info!("sync_project_created_events {:?} {:?}",from,to);
         let logs: Vec<ProjectCreatedEvent> =
             self.sync_events(
                 from,
@@ -335,8 +333,9 @@ impl ChainWatcher {
                 vec![self.config.launchpad_address],
                 vec![create_project_topic]).await?;
         let mut project_addresses = HashMap::new();
+        log::info!("get project_addresses is {:?}",project_addresses);
         for event in logs {
-            println!("Get ProjectCreated event : project_name = {:?},project_address = {:?}",
+            log::info!("Get ProjectCreated event : project_name = {:?},project_address = {:?}",
                      event.project_name,
                      hex::encode(event.project_address));
             self.all_projects.push(event.project_address);
@@ -345,9 +344,8 @@ impl ChainWatcher {
         }
         // todo: should use another task to save in batches
         if !project_addresses.is_empty() {
-            println!("update_project_addresses");
             match db::update_project_addresses(&mut self.db, project_addresses).await {
-                Err(e) => println!("update_project_addresses failed {:?}",e),
+                Err(e) => log::error!("update_project_addresses failed {:?}",e),
                 Ok(_) => {}
             }
         }
@@ -399,7 +397,6 @@ impl ChainWatcher {
             .topics(Some(topics), None, None, None)
             .build();
         let mut logs = self.web3.eth().logs(filter).await?;
-        println!("get logs {:?}",logs);
         let is_possible_to_sort_logs = logs.iter().all(|log| log.log_index.is_some());
         if is_possible_to_sort_logs {
             logs.sort_by_key(|log| {
@@ -432,16 +429,20 @@ impl ChainWatcher {
             if start_block > end_block {
                 break;
             }
-            self.sync_pair_created_events(start_block,end_block).await?;
+            self.sync_pair_created_events(start_block,end_block)
+                .await.map_err(|e| format_err!("sync_pair_created_events failed,{:?}",e))?;
             if !self.all_pairs.is_empty() {
                 for pair_event_type in &pair_event_types {
-                    self.sync_pair_events(start_block, end_block, pair_event_type).await?;
+                    self.sync_pair_events(start_block, end_block, pair_event_type)
+                        .await.map_err(|e| format_err!("sync_pair_events failed,{:?}",e))?;
                 }
             }
-            self.sync_project_created_events(start_block,end_block).await?;
+            self.sync_project_created_events(start_block,end_block)
+                .await.map_err(|e| format_err!("sync_project_created_events failed,{:?}",e))?;
             if !self.all_projects.is_empty() {
                 for event_type in &project_event_types {
-                    self.sync_project_events(start_block, end_block, event_type).await?;
+                    self.sync_project_events(start_block, end_block, event_type)
+                        .await.map_err(|e| format_err!("sync_project_events failed,{:?}",e))?;
                 }
             }
             start_block = end_block + 1;
@@ -458,26 +459,20 @@ impl ChainWatcher {
     }
 
     pub async fn run_watcher_server(mut self) {
-        println!("run_watcher_server");
-        let mut tx_poll = tokio::time::interval(Duration::from_secs(1800));
+        let mut tx_poll = tokio::time::interval(Duration::from_secs(120));
         loop {
-            println!("loop");
             tx_poll.tick().await;
             if let Err(e) = self.run_sync_events().await {
-                println!("run_sync_pair_events error occurred {:?}", e);
                 log::error!("run_sync_pair_events error occurred {:?}", e);
             }
 
         }
     }
     pub async fn run_update_events_time(mut self) {
-        println!("run_update_events_time");
         let mut tx_poll = tokio::time::interval(Duration::from_secs(120));
         loop {
             tx_poll.tick().await;
-            println!("update_events_time loop");
             if let Err(e) = self.update_events_time().await {
-                println!("update_events_time error occurred {:?}", e);
                 log::error!("update_events_time error occurred {:?}", e);
             }
 

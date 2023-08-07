@@ -1,5 +1,5 @@
 use rbatis::Rbatis;
-use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStatData, PairStatInfo, EventInfo, Project, TvlStat, VolumeStat, PairTvlStatInfo, HistoryStatInfo, LaunchpadStatInfo, StoredProjectEvent};
+use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStatData, PairStatInfo, EventInfo, Project, TvlStat, VolumeStat, PairTvlStatInfo, HistoryStatInfo, LaunchpadStatInfo, StoredProjectEvent, StoredLaunchpadStat};
 use num::{ToPrimitive, BigUint};
 use std::collections::HashMap;
 use crate::watcher::event::PairEvent;
@@ -84,7 +84,6 @@ pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Resu
         .await?;
 
     for event in events {
-        println!("insert event tx hash {}",event.tx_hash);
         Event::insert(&mut tx, &event)
             .await?;
     }
@@ -321,7 +320,6 @@ pub async fn store_pair_events(rb: &mut Rbatis,events: Vec<PairEvent>) -> anyhow
 
         }
     }
-    println!("end update event count");
     //update pool reserves
     for (pair_address,(reserve_x,reserve_y)) in last_synced_reserves {
         let reserve_x_decimal = Decimal::from_str(&reserve_x.to_string()).unwrap();
@@ -332,7 +330,6 @@ pub async fn store_pair_events(rb: &mut Rbatis,events: Vec<PairEvent>) -> anyhow
                                       rbs::to_value!(hex::encode(pair_address))])
             .await?;
     }
-    println!("end update reserves");
     // tx.commit().await?;
     Ok(())
 }
@@ -368,7 +365,6 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String, is_vs_usdc: 
     }
     let lastest_price = wraped_lastest_price.unwrap();
     let lastest_block_timestamp = lastest_price.block_timestamp_last;
-    println!("lastest_block_timestamp is {:?}",lastest_block_timestamp);
     let wraped_base_price: Option<PriceCumulativeLast> = rb
         .query_decode("select * from price_cumulative_last where pair_address =  ?  \
             and (? - block_timestamp_last > 3600) order by id asc limit 1",
@@ -381,7 +377,6 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String, is_vs_usdc: 
         wraped_base_price.unwrap()
     };
 
-    println!("base price is {:?}",base_price);
     let (delta_price0,delta_timestamp,delta_price1) = (
         db_decimal_to_big!(lastest_price.price0_cumulative_last.clone().0) - db_decimal_to_big!(base_price.price0_cumulative_last.0),
         (lastest_price.block_timestamp_last - base_price.block_timestamp_last),
@@ -415,7 +410,6 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String, is_vs_usdc: 
     }
 
     let price_round = format!("{:.18}",price);
-    println!("price_round is {:?}",price_round);
     let ret_price = Decimal::from_str(&price_round).unwrap();
 
     Ok(ret_price)
@@ -490,7 +484,7 @@ pub async fn get_unstated_days(rb:&Rbatis,confined_start_date:&String) -> anyhow
             }
         }
     };
-    println!("start_date is {:?}",date_str);
+    log::info!("start_date is {:?}",date_str);
     let now = Utc::now().date_naive();
     let start_date = NaiveDate::parse_from_str(&date_str,"%Y-%m-%d").unwrap();
     let mut unstated_days = Vec::new();
@@ -637,7 +631,7 @@ pub async fn get_project_by_name(rb:&Rbatis,project_name: String) -> anyhow::Res
 }
 pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<String>> {
     let db_projects: Option<Vec<HashMap<String, String>>> = rb
-        .query_decode("select distinct project_address from projects",vec![])
+        .query_decode("select distinct project_address from projects where project_address != null",vec![])
         .await?;
     if db_projects.is_none() {
         return Ok(vec![]);
@@ -651,25 +645,37 @@ pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<String>> {
 pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<ProjectInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let projects: Vec<Project> = rb
-        .query_decode("select * from projects order by created_time desc offset ? limit ? ",
+        .query_decode("select * from projects where project_address is not null order by created_time desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
     let projects_count: usize = rb
-        .query_decode("select count(1) from projects",vec![]).await?;
+        .query_decode("select count(1) from projects where project_address is not null",vec![]).await?;
     let quo = projects_count / PAGE_SIZE as usize;
     let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
 
     let mut ret = Vec::new();
     for p in projects.iter() {
-        println!("project_links is {}",p.project_links);
         let links_str = &p.project_links.0[..];
         let project_links: Value = serde_json::from_str(
             links_str.trim_start_matches('"')
                 .trim_end_matches('"')).unwrap();
         let total_raised: Decimal = rb
             .query_decode("select sum(op_amount) as total_raised from project_events where project_address = ? and op_type = 1",
-                          vec![rbs::to_value!(p.project_address.clone())])
+                          vec![rbs::to_value!(p.project_address.clone().unwrap())])
             .await.unwrap_or(Decimal::from_str("0").unwrap());
+
+        let ret_decimals: Option<i16> = rb
+            .query_decode("select decimals from tokens where address = ?",
+                          vec![rbs::to_value!(p.project_address.clone().unwrap())])
+            .await?;
+        let real_raised = match ret_decimals {
+            Some(decimals) => {
+                let real_decimals = BigDecimal::from_str(
+                    &BigUint::from(10u32).pow(decimals as u32).to_string()).unwrap();
+                BigDecimal::from_str(&total_raised.0.to_string()).unwrap().div(real_decimals)
+            },
+            _ => BigDecimal::from(0),
+        };
         let project = ProjectInfo {
             project_name: p.project_name.clone(),
             project_description: p.project_description.clone(),
@@ -681,15 +687,15 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
             token_symbol: p.token_symbol.clone(),
             token_address: p.token_address.clone(),
             token_price_usd: p.token_price_usd.0.to_string(),
-            start_time: p.start_time.to_string(),
-            end_time: p.end_time.to_string(),
+            start_time: p.start_time.unix_timestamp(),
+            end_time: p.end_time.unix_timestamp(),
             raise_limit: p.raise_limit.clone(),
             purchased_min_limit: p.purchased_min_limit.clone(),
             purchased_max_limit: p.purchased_max_limit.clone(),
             created_time: p.created_time.to_string(),
-            last_updated_time: p.last_updated_time.clone().unwrap_or(DateTime::from_timestamp(0)).to_string(),
+            last_updated_time: p.last_updated_time.clone().unwrap_or(DateTime::from_timestamp(0)).unix_timestamp(),
             paused: p.paused,
-            total_raised: total_raised.0.to_string(),
+            total_raised: real_raised.to_string(),
             project_title: p.project_title.clone(),
         };
         ret.push(project);
@@ -703,9 +709,8 @@ pub(crate) async fn update_project_addresses(rb: &mut Rbatis, addresses: HashMap
     //     .await?;
     for (project_name,project_address) in addresses {
         let old_project = get_project_by_name(rb,project_name.clone()).await.unwrap_or_default();
-        println!("old project is {:?}",old_project);
         if old_project.is_none() {
-            println!("not found project {}",project_name);
+            log::warn!("not found project {}",project_name);
             return Ok(());
         }
         let old_project = old_project.unwrap();
@@ -718,7 +723,6 @@ pub(crate) async fn update_project_addresses(rb: &mut Rbatis, addresses: HashMap
             project_links: serde_json::from_value(old_project_links).unwrap(),
             ..old_project.clone()
         };
-        println!("new project is {:?}",new_project);
         Project::update_by_column(rb, &new_project,"project_name").await?;
     }
     // tx.commit().await?;
@@ -750,7 +754,7 @@ pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: Stri
             project_address = ?",vec![rbs::to_value!(project_address)]).await?;
         //the project should exist
         if project.is_none() {
-            println!("project {} is not exist in db",project_address);
+            log::error!("project {} is not exist in db",project_address);
             continue;
         }
         let project = project.unwrap();
@@ -797,22 +801,59 @@ pub(crate) async fn remove_project(rb: &mut Rbatis, project_name: String)
         .await?;
     Ok(())
 }
-pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<LaunchpadStatInfo> {
-    let projects_count: usize = rb
+pub(crate) async fn save_launchpad_stat_info(rb: &mut Rbatis, info: StoredLaunchpadStat) -> anyhow::Result<()> {
+    StoredLaunchpadStat::insert(rb, &info).await?;
+    Ok(())
+}
+pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<Option<LaunchpadStatInfo>> {
+    let stat_info: Option<LaunchpadStatInfo> = rb
+        .query_decode("select total_projects,total_addresses,total_raised from \
+        launchpad_stat_info order by stat_time desc limit 1",
+                      vec![]).await?;
+    Ok(stat_info)
+}
+pub async fn summary_launchpad_stat_info(rb: &mut Rbatis) -> anyhow::Result<()> {
+    let total_projects: usize = rb
         .query_decode("select count(1) from projects",vec![]).await?;
-    let users_count: usize = rb
+    let total_addresses: usize = rb
         .query_decode("select count(distinct op_user) from project_events",
                       vec![])
         .await?;
-    let total_invest_amount: Decimal = rb
-        .query_decode("select sum(op_amount) from project_events",vec![]).await?;
+    log::info!("{:?} {:?}",total_projects,total_addresses);
+    let invest_amounts: Vec<HashMap<String,String>> = rb
+        .query_decode("select p.receive_token,sum(coalesce(e.op_amount,0)) as total_amount from \
+        projects p left join project_events e on p.project_address = e.project_address \
+        group by p.receive_token",vec![]).await?;
+    log::info!("{:?}",invest_amounts);
+    let mut total_invest_amount = BigDecimal::from(0);
+    for invest_amount in invest_amounts.iter() {
+        let receive_token = invest_amount.get("receive_token").unwrap();
+        let token_info: Option<Token> =
+        rb.query_decode("select * from tokens where address = ? limit 1",
+                        vec![rbs::to_value!(receive_token)]).await?;
+        if token_info.is_none() {
+            return Err(format_err!("Receive token not found in tokens"));
+        }
+        let token_info = token_info.unwrap();
+        let raw_total_amount = invest_amount.get("total_amount").unwrap();
+        let real_decimals = BigDecimal::from_str(
+            &BigUint::from(10u32).pow(token_info.decimals as u32).to_string()).unwrap();
+        let real_usd_price =
+            BigDecimal::from_str(&token_info.usd_price.unwrap_or(Decimal::from_str("0").unwrap()).0.to_string()).unwrap_or_default();
+        let real_total_amount = BigDecimal::from_str(&raw_total_amount).unwrap()
+            .mul(real_usd_price)
+            .div(real_decimals);
+        total_invest_amount += real_total_amount;
+    }
 
-    let stat_info = LaunchpadStatInfo {
-        projects_count,
-        users_count,
-        total_amount: total_invest_amount.0.to_string()
+    let stat_info = StoredLaunchpadStat {
+        stat_time: DateTime::now(),
+        total_projects,
+        total_addresses,
+        total_raised: total_invest_amount.to_string()
     };
-    Ok(stat_info)
+    save_launchpad_stat_info(rb,stat_info).await?;
+    Ok(())
 }
 #[cfg(test)]
 mod test {

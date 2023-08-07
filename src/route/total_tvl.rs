@@ -83,7 +83,7 @@ pub async fn get_total_volume_by_day(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            println!("get_all_volumes_by_day from db failed,{:?}",e);
+            log::error!("get_all_volumes_by_day from db failed,{:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
                 error: Some("get_all_volumes_by_day failed".to_string()),

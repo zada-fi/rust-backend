@@ -165,11 +165,17 @@ pub struct StoredProjectEvent {
     pub(crate) op_time: Option<DateTime>
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct StoredLaunchpadStat {
+    pub(crate) stat_time: DateTime,
+    pub(crate) total_projects: usize,
+    pub(crate) total_addresses: usize,
+    pub(crate) total_raised: String,
+}
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LaunchpadStatInfo {
-    pub(crate) projects_count: usize,
-    pub(crate) users_count: usize,
-    pub(crate) total_amount: String,
-    // total_market_cap: String,
+    pub(crate) total_projects: usize,
+    pub(crate) total_addresses: usize,
+    pub(crate) total_raised: String,
 }
 rbatis::crud!(Event {}, "events");
 rbatis::crud!(PoolInfo {}, "pool_info");
@@ -181,6 +187,7 @@ rbatis::crud!(VolumeStat {}, "volume_stats");
 rbatis::crud!(HistoryStatInfo {}, "history_stats");
 rbatis::crud!(Project {}, "projects");
 rbatis::crud!(StoredProjectEvent {}, "project_events");
+rbatis::crud!(StoredLaunchpadStat {}, "launchpad_stat_info");
 
 impl Default for Project {
     fn default() -> Self {

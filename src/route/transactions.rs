@@ -58,7 +58,7 @@ pub async fn get_all_transactions(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            println!("get_all_transactions from db failed,{:?}",e);
+            log::error!("get_all_transactions from db failed,{:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
                 error: Some("get events failed".to_string()),

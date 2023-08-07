@@ -34,6 +34,7 @@ pub fn init_db(db_url:String,pool_size: usize) -> Rbatis {
 #[actix_rt::main]
 async fn main() -> std::io::Result<()> {
     dotenv().expect("Config file not found");
+    env_logger::init();
     let config = BackendConfig::from_env();
     let db = init_db(config.database_url.clone(), config.db_pool_size as usize);
     let app_state = AppState {

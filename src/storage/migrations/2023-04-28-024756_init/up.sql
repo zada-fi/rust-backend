@@ -121,3 +121,12 @@ CREATE TABLE project_events (
     op_amount numeric NOT NULL,
     op_time timestamp with time zone
 )
+
+-- store launchpad stat info
+CREATE TABLE launchpad_stat_info (
+    stat_time timestamp NOT NULL,
+    total_projects integer NOT NULL,
+    total_addresses integer NOT NULL,
+    total_raised numeric NOT NULL,
+    primary key (stat_time)
+)

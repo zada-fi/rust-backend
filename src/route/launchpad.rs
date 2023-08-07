@@ -30,13 +30,13 @@ pub struct ProjectInfo {
     pub(crate) token_symbol: String,
     pub(crate) token_address: String,
     pub(crate) token_price_usd: String,
-    pub(crate) start_time: String,
-    pub(crate) end_time: String,
+    pub(crate) start_time: i64,
+    pub(crate) end_time: i64,
     pub(crate) raise_limit: String,
     pub(crate) purchased_min_limit: String,
     pub(crate) purchased_max_limit: String,
     pub(crate) created_time: String,
-    pub(crate) last_updated_time: String,
+    pub(crate) last_updated_time: i64,
     pub(crate) paused: bool,
     pub(crate) total_raised: String,
 }
@@ -123,7 +123,7 @@ pub async fn create_project(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            println!("save project failed {:?}",e);
+            log::error!("save project failed {:?}",e);
             let resp = BackendResponse {
                 code: BackendError::InvalidParameters,
                 error: Some("save project failed".to_string()),
@@ -270,7 +270,7 @@ pub async fn update_project(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            println!("{:?}",e);
+            log::error!("update_project failed {:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
                 error: Some("update project failed".to_string()),
@@ -295,7 +295,7 @@ pub async fn remove_project(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            println!("remove project failed {:?}",e);
+            log::error!("remove project failed {:?}",e);
             let resp = BackendResponse {
                 code: BackendError::InvalidParameters,
                 error: Some("remove project failed".to_string()),
@@ -324,7 +324,7 @@ pub async fn get_all_projects(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            println!("get_projects from db failed,{:?}",e);
+            log::error!("get_projects from db failed,{:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
                 error: Some("get projects failed".to_string()),
@@ -362,7 +362,7 @@ pub async fn get_project_info(
                 }
             },
             Err(e) => {
-                println!("get_projects from db failed,{:?}",e);
+                log::error!("get_projects from db failed,{:?}",e);
                 let resp = BackendResponse {
                     code: BackendError::DbErr,
                     error: Some("get projects failed".to_string()),
@@ -381,8 +381,6 @@ pub async fn get_project_info(
         Ok(HttpResponse::Ok().json(resp))
     }
 
-
-
 }
 pub async fn get_launchpad_stat_info(
     data: web::Data<AppState>,
@@ -390,11 +388,11 @@ pub async fn get_launchpad_stat_info(
 ) -> actix_web::Result<HttpResponse> {
     let rb = data.db.clone();
     match db::get_launchpad_stat_info(&rb).await {
-        Ok(stat_info) => {
+        Ok(stat_info)  => {
             let resp = BackendResponse {
                 code: BackendError::Ok,
                 error: None,
-                data: Some(stat_info)
+                data: stat_info
             };
             Ok(HttpResponse::Ok().json(resp))
         },
@@ -442,7 +440,7 @@ pub async fn get_all_claimable_tokens(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            println!("get_claimable_projects from db failed,{:?}",e);
+            log::error!("get_claimable_projects from db failed,{:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
                 error: Some("get_claimable_projects failed".to_string()),

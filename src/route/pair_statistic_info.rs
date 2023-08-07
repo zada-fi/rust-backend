@@ -40,7 +40,7 @@ pub async fn get_pair_statistic_info(
             Ok(HttpResponse::Ok().json(resp))
         },
         Err(e) => {
-            println!("get_pools_stat_info from db failed,{:?}",e);
+            log::error!("get_pools_stat_info from db failed,{:?}",e);
             let resp = BackendResponse {
                 code: BackendError::DbErr,
                 error: Some("get_pools_stat_info failed".to_string()),
