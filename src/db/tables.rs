@@ -169,13 +169,13 @@ pub struct StoredLaunchpadStat {
     pub(crate) stat_time: DateTime,
     pub(crate) total_projects: usize,
     pub(crate) total_addresses: usize,
-    pub(crate) total_raised: String,
+    pub(crate) total_raised: Decimal,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LaunchpadStatInfo {
     pub(crate) total_projects: usize,
     pub(crate) total_addresses: usize,
-    pub(crate) total_raised: String,
+    pub(crate) total_raised: Decimal,
 }
 rbatis::crud!(Event {}, "events");
 rbatis::crud!(PoolInfo {}, "pool_info");

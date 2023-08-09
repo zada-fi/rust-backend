@@ -858,7 +858,7 @@ pub async fn summary_launchpad_stat_info(rb: &mut Rbatis,web3:&Web3<Http>) -> an
         stat_time: DateTime::now(),
         total_projects,
         total_addresses,
-        total_raised: total_invest_amount.to_string()
+        total_raised: Decimal::from_str(&total_invest_amount.to_string()).unwrap()
     };
     save_launchpad_stat_info(rb,stat_info).await?;
     Ok(())
