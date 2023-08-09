@@ -38,11 +38,11 @@ impl TokenPriceTask {
     }
     pub async fn get_price(&mut self, token_address: String) ->anyhow::Result<()>{
         let tokens = db::get_token(&self.db,token_address.clone()).await?;
-        if tokens.is_empty() {
+        if tokens.is_none() {
             return Err(format_err!("token not found"));
         }
 
-        let token = tokens[0].clone();
+        let token = tokens.unwrap();
         // If there is no price of this token on coingecko, it needs to be calculated
         // using the weighted average price of the pool
         let price = if let Some(coingecko_id) = token.coingecko_id {

@@ -20,6 +20,7 @@ use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
 use crate::watcher::event::{PairCreatedEvent, PairEvent, EventType, ProjectCreatedEvent, ProjectEvent};
 use crate::token_price::ETH_ADDRESS;
+use rbatis::Rbatis;
 
 const FACTORY_EVENTS: &str = include_str!("../abi/factory_abi.json");
 const PAIR_EVENTS: &str = include_str!("../abi/pair_abi.json");
@@ -67,7 +68,7 @@ impl ChainWatcher {
     //     Self::build_contract(abi_string,&config.remote_web3_url,&token_address)
     // }
     //
-    pub async fn get_token_symbol(&mut self, address: H160) ->anyhow::Result<String> {
+    pub async fn get_token_info(rb: &mut Rbatis, web3: &Web3<Http>, address: H160) ->anyhow::Result<Token> {
         //todo: use memory cache
         let abi_string = r#"[ {
               "constant": true,
@@ -100,31 +101,32 @@ impl ChainWatcher {
               "type": "function"
             }
         ]"#;
-        let token= db::get_token(&self.db,hex::encode(address.as_bytes())).await?;
-        let token_symbol = if token.is_empty() {
-            //get from chain
-            let erc20_abi = ethabi::Contract::load(abi_string.as_bytes()).unwrap();
-            let erc20_contract = Contract::new(self.web3.eth(), address, erc20_abi);
-            let symbol:String = erc20_contract.query("symbol",(),None, Options::default(), None)
-                .await?;
-            let decimals: u8 = erc20_contract.query("decimals",(),None, Options::default(), None)
-                .await?;
-            let address_str = hex::encode(address.as_bytes());
-            let new_token = Token {
-                address: address_str.clone(),
-                symbol: symbol.clone(),
-                decimals,
-                coingecko_id: if address_str == ETH_ADDRESS { Some("weth".to_string()) } else { None },
-                usd_price: None
-            };
-            // ignore the error
-            // todo: should use another task to save in batches
-            let _ret = db::save_token(&mut self.db,new_token).await;
-            symbol
-        } else {
-            token[0].symbol.clone()
+        let token= match db::get_token(rb,hex::encode(address.as_bytes())).await {
+            Ok(ret) if ret.is_none() => {
+                //get from chain
+                let erc20_abi = ethabi::Contract::load(abi_string.as_bytes()).unwrap();
+                let erc20_contract = Contract::new(web3.eth(), address, erc20_abi);
+                let symbol: String = erc20_contract.query("symbol", (), None, Options::default(), None)
+                    .await?;
+                let decimals: u8 = erc20_contract.query("decimals", (), None, Options::default(), None)
+                    .await?;
+                let address_str = hex::encode(address.as_bytes());
+                let new_token = Token {
+                    address: address_str.clone(),
+                    symbol: symbol.clone(),
+                    decimals,
+                    coingecko_id: if address_str == ETH_ADDRESS { Some("weth".to_string()) } else { None },
+                    usd_price: None
+                };
+                // ignore the error
+                // todo: should use another task to save in batches
+                let _ret = db::save_token(rb, new_token.clone()).await;
+                new_token
+            },
+            Ok(token) => token.unwrap(),
+            Err(e) => return Err(e),
         };
-        Ok(token_symbol)
+        Ok(token)
     }
 
     pub fn get_topics() -> HashMap<String,H256> {
@@ -270,8 +272,8 @@ impl ChainWatcher {
                          vec![self.config.contract_address],
                          vec![create_pair_topic]).await?;
         for event in logs {
-            let token_x_symbol = self.get_token_symbol(event.token0_address).await.unwrap();
-            let token_y_symbol = self.get_token_symbol(event.token1_address).await.unwrap();
+            let token_x_symbol = Self::get_token_info(&mut self.db, &self.web3, event.token0_address).await.unwrap().symbol;
+            let token_y_symbol = Self::get_token_info(&mut self.db, &self.web3, event.token1_address).await.unwrap().symbol;
             log::debug!("Get PairCreated event : pair_address = {:?}, token0 {} address is {:?}, \
             token1 {} address is {:?}",event.pair_address.to_string(),
                      token_x_symbol,

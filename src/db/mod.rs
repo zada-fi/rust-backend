@@ -15,6 +15,10 @@ use anyhow::format_err;
 use crate::route::launchpad::{ProjectInfo, ClaimableProject};
 use serde_json::Value;
 use std::ops::{Mul, Div};
+use crate::watcher::watch::ChainWatcher;
+use web3::Web3;
+use web3::transports::Http;
+use web3::types::H160;
 
 pub(crate) mod tables;
 const PAGE_SIZE:i32 = 10;
@@ -207,11 +211,11 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(
     Ok((pg_count,ret))
 }
 
-pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Vec<Token>> {
-    let tokens: Vec<Token> = rb
-        .query_decode("select * from tokens where address = ?",vec![rbs::to_value!(address)])
+pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Option<Token>> {
+    let token: Option<Token> = rb
+        .query_decode("select * from tokens where address = ? limit 1",vec![rbs::to_value!(address)])
         .await?;
-    Ok(tokens)
+    Ok(token)
 }
 pub async fn get_token_decimals_in_pool(rb:&Rbatis,pair_address: String ) -> anyhow::Result<(i8,i8)> {
     let x_decimals: i8 = rb
@@ -812,7 +816,7 @@ pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<Option<Launch
                       vec![]).await?;
     Ok(stat_info)
 }
-pub async fn summary_launchpad_stat_info(rb: &mut Rbatis) -> anyhow::Result<()> {
+pub async fn summary_launchpad_stat_info(rb: &mut Rbatis,web3:&Web3<Http>) -> anyhow::Result<()> {
     let total_projects: usize = rb
         .query_decode("select count(1) from projects",vec![]).await?;
     let total_addresses: usize = rb
@@ -827,14 +831,18 @@ pub async fn summary_launchpad_stat_info(rb: &mut Rbatis) -> anyhow::Result<()> 
     log::info!("{:?}",invest_amounts);
     let mut total_invest_amount = BigDecimal::from(0);
     for invest_amount in invest_amounts.iter() {
-        let receive_token = invest_amount.get("receive_token").unwrap();
+        let receive_token = invest_amount.get("receive_token").unwrap()
+            .trim_start_matches("0x").to_ascii_lowercase();
         let token_info: Option<Token> =
         rb.query_decode("select * from tokens where address = ? limit 1",
-                        vec![rbs::to_value!(receive_token)]).await?;
-        if token_info.is_none() {
-            return Err(format_err!("Receive token not found in tokens"));
-        }
-        let token_info = token_info.unwrap();
+                        vec![rbs::to_value!(receive_token.clone())]).await?;
+        let token_info = if token_info.is_none() {
+            // if token is not exist,get token info from contract
+            ChainWatcher::get_token_info(rb,web3,H160::from_str(&receive_token).unwrap()).await?
+            // return Err(format_err!("Receive token not found in tokens"));
+        } else {
+            token_info.unwrap()
+        };
         let raw_total_amount = invest_amount.get("total_amount").unwrap();
         let real_decimals = BigDecimal::from_str(
             &BigUint::from(10u32).pow(token_info.decimals as u32).to_string()).unwrap();

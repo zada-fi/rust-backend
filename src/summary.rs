@@ -10,20 +10,26 @@ use crate::db::tables::{EventStatData, TvlStat, VolumeStat, HistoryStatInfo};
 use rbatis::rbdc::date::Date;
 use crate::db_decimal_to_big;
 use num::BigUint;
+use web3::Web3;
+use web3::transports::Http;
 
 pub struct TickSummaryTask {
     pub db: rbatis::Rbatis,
     pub config: BackendConfig,
+    pub web3: Web3<Http>,
 }
 impl TickSummaryTask {
     pub fn new(db:rbatis::Rbatis,config:BackendConfig)->Self {
+        let transport = web3::transports::Http::new(&config.remote_web3_url).unwrap();
+        let web3 = Web3::new(transport);
         Self {
             db,
-            config
+            config,
+            web3
         }
     }
     pub async fn run_tick_summary(mut self) {
-        let mut tx_poll = tokio::time::interval(Duration::from_secs(60));
+        let mut tx_poll = tokio::time::interval(Duration::from_secs(1800));
         loop {
             tx_poll.tick().await;
             if let Err(e) = self.statistic_summary().await {
@@ -113,7 +119,7 @@ impl TickSummaryTask {
 
     pub async fn statistic_lauchpad_summary(&mut self) ->anyhow::Result<()> {
         log::info!("statistic_lauchpad_summary");
-        db::summary_launchpad_stat_info(&mut self.db).await?;
+        db::summary_launchpad_stat_info(&mut self.db,&self.web3).await?;
         Ok(())
     }
 }
