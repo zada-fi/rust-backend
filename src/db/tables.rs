@@ -145,8 +145,9 @@ pub struct Project {
     pub(crate)  token_symbol: String,
     pub(crate)  token_address: String,
     pub(crate)  token_price_usd: Decimal,
-    pub(crate)  start_time: DateTime,
-    pub(crate)  end_time: DateTime,
+    pub(crate)  presale_start_time: i64,
+    pub(crate)  presale_end_time: i64,
+    pub(crate)  pubsale_end_time: i64,
     pub(crate)  raise_limit: String,
     pub(crate)  purchased_min_limit: String,
     pub(crate)  purchased_max_limit: String,
@@ -203,14 +204,15 @@ impl Default for Project {
             token_symbol: "".to_string(),
             token_address: "".to_string(),
             token_price_usd: Decimal::from_str("0").unwrap(),
-            start_time: DateTime::from_timestamp(0),
-            end_time: DateTime::from_timestamp(0),
+            presale_start_time: 0,
+            presale_end_time: 0,
             raise_limit: "".to_string(),
             purchased_min_limit: "".to_string(),
             purchased_max_limit: "".to_string(),
             created_time: DateTime::from_timestamp(0),
             last_updated_time: None,
-            paused: false
+            paused: false,
+            pubsale_end_time: 0,
         }
     }
 }

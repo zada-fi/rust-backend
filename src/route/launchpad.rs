@@ -30,8 +30,9 @@ pub struct ProjectInfo {
     pub(crate) token_symbol: String,
     pub(crate) token_address: String,
     pub(crate) token_price_usd: String,
-    pub(crate) start_time: i64,
-    pub(crate) end_time: i64,
+    pub(crate) presale_start_time: i64,
+    pub(crate) presale_end_time: i64,
+    pub(crate) pubsale_end_time: i64,
     pub(crate) raise_limit: String,
     pub(crate) purchased_min_limit: String,
     pub(crate) purchased_max_limit: String,
@@ -46,7 +47,7 @@ pub struct ClaimableProject {
     pub(crate) project_address: String,
     pub(crate) token_symbol: String,
     pub(crate) claimable_amount: String,
-    pub(crate) claim_start_time: String,
+    pub(crate) claim_start_time: i64,
 }
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CreateProjectReq {
@@ -60,8 +61,9 @@ pub struct CreateProjectReq {
     pub(crate) token_symbol: String,
     pub(crate) token_address: String,
     pub(crate) token_price_usd: String,
-    pub(crate) start_time: String,
-    pub(crate) end_time: String,
+    pub(crate) presale_start_time: i64,
+    pub(crate) presale_end_time: i64,
+    pub(crate) pubsale_end_time: i64,
     pub(crate) raise_limit: String,
     pub(crate) purchased_min_limit: String,
     pub(crate) purchased_max_limit: String,
@@ -104,8 +106,9 @@ pub async fn create_project(
         token_symbol: msg.token_symbol.to_string(),
         token_address: msg.token_address.clone(),
         token_price_usd: Decimal::from_str(&msg.token_price_usd).unwrap(),
-        start_time: DateTime::from_str(&msg.start_time).unwrap(),
-        end_time: DateTime::from_str(&msg.end_time).unwrap(),
+        presale_start_time: msg.presale_start_time,
+        presale_end_time: msg.presale_end_time,
+        pubsale_end_time: msg.pubsale_end_time,
         raise_limit: msg.raise_limit.clone(),
         purchased_min_limit: msg.purchased_min_limit.clone(),
         purchased_max_limit: msg.purchased_max_limit.clone(),
@@ -197,15 +200,21 @@ pub async fn update_project(
                 ..old_project.clone()
             }
         },
-        "start_time" => {
+        "presale_start_time" => {
             Project {
-                start_time: DateTime::from_str(&msg.update_value).unwrap(),
+                presale_start_time: msg.update_value.parse::<i64>().unwrap_or(old_project.presale_start_time),
                 ..old_project.clone()
             }
         },
-        "end_time" => {
+        "presale_end_time" => {
             Project {
-                end_time: DateTime::from_str(&msg.update_value).unwrap(),
+                presale_end_time: msg.update_value.parse::<i64>().unwrap_or(old_project.presale_end_time),
+                ..old_project.clone()
+            }
+        },
+        "pubsale_end_time" => {
+            Project {
+                pubsale_end_time: msg.update_value.parse::<i64>().unwrap_or(old_project.pubsale_end_time),
                 ..old_project.clone()
             }
         },

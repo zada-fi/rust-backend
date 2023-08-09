@@ -691,8 +691,8 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
             token_symbol: p.token_symbol.clone(),
             token_address: p.token_address.clone(),
             token_price_usd: p.token_price_usd.0.to_string(),
-            start_time: p.start_time.unix_timestamp(),
-            end_time: p.end_time.unix_timestamp(),
+            presale_start_time: p.presale_start_time,
+            presale_end_time: p.presale_end_time,
             raise_limit: p.raise_limit.clone(),
             purchased_min_limit: p.purchased_min_limit.clone(),
             purchased_max_limit: p.purchased_max_limit.clone(),
@@ -701,6 +701,7 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
             paused: p.paused,
             total_raised: real_raised.to_string(),
             project_title: p.project_title.clone(),
+            pubsale_end_time: p.pubsale_end_time,
         };
         ret.push(project);
     };
@@ -786,7 +787,7 @@ pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: Stri
             project_address: project_address.clone(),
             token_symbol: project.token_symbol,
             claimable_amount: claimable_amount.to_string(),
-            claim_start_time: project.end_time.0.to_string()
+            claim_start_time: project.pubsale_end_time
         };
         ret.push(claimable_project);
 
