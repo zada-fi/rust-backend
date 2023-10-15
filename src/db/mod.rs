@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::watcher::event::PairEvent;
 use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, Zero};
 use crate::token_price::ETH_ADDRESS;
 use rbatis::executor::Executor;
 use rbatis::rbdc::datetime::DateTime;
@@ -565,6 +565,13 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
             pair_address = ? and stat_date > current_date - interval '7 days' limit 1",
                           vec![rbs::to_value!(tvl_stat.pair_address.clone())])
             .await?;
+        let usd_day_volume = pool_day_volume.get(&"total_usd_volume".to_string()).unwrap().clone();
+        let usd_day_volume_deciaml = BigDecimal::from_str(&tvl_stat.usd_tvl.to_string()).unwrap_or_default();
+        let apy = if !usd_day_volume_deciaml.is_zero() {
+            BigDecimal::from_str(&usd_day_volume.to_string()).unwrap().div(&usd_day_volume_deciaml)
+        } else {
+            BigDecimal::from(0)
+        };
         let pair_stat_info = PairStatInfo {
             pair_address: tvl_stat.pair_address,
             token_x_symbol: tvl_stat.token_x_symbol,
@@ -572,8 +579,8 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
             token_x_address: tvl_stat.token_x_address,
             token_y_address: tvl_stat.token_y_address,
             usd_volume_week:pool_week_volume.get(&"total_usd_volume".to_string()).unwrap().clone(),
-            usd_volume: pool_day_volume.get(&"total_usd_volume".to_string()).unwrap().clone(),
-
+            usd_volume: usd_day_volume,
+            apy: Decimal::from_str(&apy.to_string()).unwrap(),
             usd_tvl: tvl_stat.usd_tvl
         };
         ret.push(pair_stat_info);
@@ -611,6 +618,7 @@ pub(crate) async fn save_history_stat(rb: &mut Rbatis, stat: HistoryStatInfo) ->
             ]).await?;
     Ok(())
 }
+
 // pub(crate) async fn save_history_stats(rb: &Rbatis, stats: Vec<HistoryStatInfo>) -> anyhow::Result<()> {
 //     let mut tx = rb
 //         .acquire_begin()
