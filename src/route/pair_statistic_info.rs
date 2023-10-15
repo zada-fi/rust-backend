@@ -15,7 +15,6 @@ pub struct PairStatInfo {
     pub usd_volume: String,
     pub usd_volume_week: String,
     pub usd_tvl: String,
-    pub apy: String,
 }
 pub async fn get_pair_statistic_info(
     data: web::Data<AppState>,
@@ -33,7 +32,6 @@ pub async fn get_pair_statistic_info(
                 usd_volume: format!("{:.2}",db_decimal_to_big!(p.usd_volume.0)),
                 usd_volume_week: format!("{:.2}",db_decimal_to_big!(p.usd_volume_week.0)),
                 usd_tvl: format!("{:.2}",db_decimal_to_big!(p.usd_tvl.0)),
-                apy: format!("{:.2}",db_decimal_to_big!(p.apy.0).mul(BigDecimal::from(100)))
             }).collect::<Vec<_>>();
             let resp = BackendResponse {
                 code: BackendError::Ok,

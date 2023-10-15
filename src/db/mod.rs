@@ -211,6 +211,32 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(
     Ok((pg_count,ret))
 }
 
+pub async fn get_pools_apy(rb: &Rbatis,pools: Vec<String>) ->anyhow::Result<Vec<BigDecimal>> {
+    let mut apys = Vec::new();
+    for pool in pools {
+        let pool_last_day_volume: HashMap<String,Decimal> = rb
+            .query_decode("select coalesce(sum(usd_volume),0) as usd_volume from volume_stats where \
+            pair_address = ?",
+                          vec![rbs::to_value!(pool.clone())])
+            .await?;
+        let pool_last_day_tvl: HashMap<String,Decimal> = rb
+            .query_decode("select coalesce(sum(usd_tvl),0) as usd_tvl from tvl_stats where \
+            pair_address = ? order by start_date desc limit 1",
+                          vec![rbs::to_value!(pool.clone())])
+            .await?;
+        let usd_day_volume = pool_last_day_volume.get(&"usd_volume".to_string()).unwrap().clone();
+        let usd_day_volume_decimal = BigDecimal::from_str(&usd_day_volume.to_string()).unwrap_or_default();
+        let usd_tvl = pool_last_day_tvl.get(&"usd_tvl".to_string()).unwrap().clone();
+        let usd_tvl_decimal = BigDecimal::from_str(&usd_tvl.to_string()).unwrap_or_default();
+        let apy = if !usd_tvl_decimal.is_zero() {
+            usd_day_volume_decimal.div(&usd_tvl_decimal).mul(BigDecimal::from(36500))
+        } else {
+            BigDecimal::from(0)
+        };
+        apys.push(apy);
+    }
+    Ok(apys)
+}
 pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Option<Token>> {
     let token: Option<Token> = rb
         .query_decode("select * from tokens where address = ? limit 1",vec![rbs::to_value!(address)])
@@ -567,11 +593,6 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
             .await?;
         let usd_day_volume = pool_day_volume.get(&"total_usd_volume".to_string()).unwrap().clone();
         let usd_day_volume_deciaml = BigDecimal::from_str(&tvl_stat.usd_tvl.to_string()).unwrap_or_default();
-        let apy = if !usd_day_volume_deciaml.is_zero() {
-            BigDecimal::from_str(&usd_day_volume.to_string()).unwrap().div(&usd_day_volume_deciaml)
-        } else {
-            BigDecimal::from(0)
-        };
         let pair_stat_info = PairStatInfo {
             pair_address: tvl_stat.pair_address,
             token_x_symbol: tvl_stat.token_x_symbol,
@@ -580,7 +601,6 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
             token_y_address: tvl_stat.token_y_address,
             usd_volume_week:pool_week_volume.get(&"total_usd_volume".to_string()).unwrap().clone(),
             usd_volume: usd_day_volume,
-            apy: Decimal::from_str(&apy.to_string()).unwrap(),
             usd_tvl: tvl_stat.usd_tvl
         };
         ret.push(pair_stat_info);

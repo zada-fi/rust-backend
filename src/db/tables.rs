@@ -99,7 +99,6 @@ pub struct PairStatInfo {
     pub(crate) usd_tvl: Decimal,
     pub(crate) usd_volume: Decimal,
     pub(crate) usd_volume_week: Decimal,
-    pub(crate) apy: Decimal,
 
 }
 
