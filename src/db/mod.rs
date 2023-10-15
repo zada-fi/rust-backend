@@ -492,7 +492,7 @@ pub async fn get_unstated_days(rb:&Rbatis,confined_start_date:&String) -> anyhow
     let now = Utc::now().date_naive();
     let start_date = NaiveDate::parse_from_str(&date_str,"%Y-%m-%d").unwrap();
     let mut unstated_days = Vec::new();
-    if now.gt(&start_date) {
+    if now.ge(&start_date) {
         unstated_days.push(now.to_string());
         let mut tmp_date = now;
         loop {
