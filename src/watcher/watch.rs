@@ -20,7 +20,7 @@ use rbatis::rbdc::decimal::Decimal;
 use std::str::FromStr;
 use crate::watcher::event::{PairCreatedEvent, PairEvent, EventType, ProjectCreatedEvent, ProjectEvent};
 use crate::token_price::ETH_ADDRESS;
-use rbatis::Rbatis;
+use rbatis::RBatis;
 
 const FACTORY_EVENTS: &str = include_str!("../abi/factory_abi.json");
 const PAIR_EVENTS: &str = include_str!("../abi/pair_abi.json");
@@ -29,7 +29,7 @@ const LAUNCHPAD_EVENTS: &str = include_str!("../abi/launchpad_abi.json");
 pub struct ChainWatcher {
     pub config: BackendConfig,
     pub web3: Web3<Http>,
-    pub db: rbatis::Rbatis,
+    pub db: rbatis::RBatis,
     pub all_pairs: Vec<H160>,
     pub all_projects: Vec<H160>,
     pub pair_topics: HashMap<String,H256>,
@@ -68,7 +68,7 @@ impl ChainWatcher {
     //     Self::build_contract(abi_string,&config.remote_web3_url,&token_address)
     // }
     //
-    pub async fn get_token_info(rb: &mut Rbatis, web3: &Web3<Http>, address: H160) ->anyhow::Result<Token> {
+    pub async fn get_token_info(rb: &mut RBatis, web3: &Web3<Http>, address: H160) ->anyhow::Result<Token> {
         //todo: use memory cache
         let abi_string = r#"[ {
               "constant": true,
@@ -240,7 +240,7 @@ impl ChainWatcher {
         db::update_from_of_add_liq_events(&mut self.db,add_liq_accounts).await?;
         Ok(())
     }
-    pub async fn new(config:BackendConfig,db: rbatis::Rbatis) -> anyhow::Result<Self> {
+    pub async fn new(config:BackendConfig,db: rbatis::RBatis) -> anyhow::Result<Self> {
         let transport = web3::transports::Http::new(&config.remote_web3_url).unwrap();
         let web3 = Web3::new(transport);
         let topics = Self::get_topics();
@@ -481,7 +481,7 @@ impl ChainWatcher {
         }
     }
 }
-pub async fn run_watcher(config: BackendConfig, db: rbatis::Rbatis) -> JoinHandle<()> {
+pub async fn run_watcher(config: BackendConfig, db: rbatis::RBatis) -> JoinHandle<()> {
     log::info!("Starting watcher!");
     let watcher = ChainWatcher::new(config, db).await.unwrap();
     tokio::spawn(watcher.clone().run_watcher_server());

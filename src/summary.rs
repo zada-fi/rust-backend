@@ -14,12 +14,12 @@ use web3::Web3;
 use web3::transports::Http;
 
 pub struct TickSummaryTask {
-    pub db: rbatis::Rbatis,
+    pub db: rbatis::RBatis,
     pub config: BackendConfig,
     pub web3: Web3<Http>,
 }
 impl TickSummaryTask {
-    pub fn new(db:rbatis::Rbatis,config:BackendConfig)->Self {
+    pub fn new(db:rbatis::RBatis,config:BackendConfig)->Self {
         let transport = web3::transports::Http::new(&config.remote_web3_url).unwrap();
         let web3 = Web3::new(transport);
         Self {
@@ -124,7 +124,7 @@ impl TickSummaryTask {
     }
 }
 
-pub async fn run_tick_summary(db: rbatis::Rbatis,config:BackendConfig) -> JoinHandle<()> {
+pub async fn run_tick_summary(db: rbatis::RBatis,config:BackendConfig) -> JoinHandle<()> {
     log::info!("Starting tick summary!");
     let task = TickSummaryTask::new(db,config);
     tokio::spawn(task.run_tick_summary())
@@ -134,11 +134,11 @@ pub async fn run_tick_summary(db: rbatis::Rbatis,config:BackendConfig) -> JoinHa
 #[cfg(test)]
 mod test {
     use super::*;
-    use rbatis::Rbatis;
+    use rbatis::RBatis;
 
     #[tokio::test]
     async fn statistic_summary() {
-        let rb = Rbatis::new();
+        let rb = RBatis::new();
         let db_url = "postgres://postgres:postgres123@localhost/backend";
         rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
         let pool = rb

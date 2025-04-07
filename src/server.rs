@@ -13,7 +13,7 @@ use crate::route::launchpad::{get_all_projects, create_project, update_project, 
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub config: BackendConfig,
-    pub db: rbatis::Rbatis,
+    pub db: rbatis::RBatis,
 }
 
 pub(crate) async fn run_server(app_state: AppState) {

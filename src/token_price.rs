@@ -11,12 +11,12 @@ use reqwest::Url;
 pub const USDC_ADDRESS: &str = "a0d71b9877f44c744546d649147e3f1e70a93760";
 pub const ETH_ADDRESS: &str = "a1ea0b2354f5a344110af2b6ad68e75545009a03";
 pub struct TokenPriceTask {
-    pub db: rbatis::Rbatis,
+    pub db: rbatis::RBatis,
     pub base_url: Url,
     pub client: reqwest::Client
 }
 impl TokenPriceTask {
-    pub fn new(db:rbatis::Rbatis,base_url:Url,client:reqwest::Client)->Self {
+    pub fn new(db:rbatis::RBatis,base_url:Url,client:reqwest::Client)->Self {
         Self {
             db,
             base_url,
@@ -138,7 +138,7 @@ impl TokenPriceTask {
     }
 }
 
-pub async fn run_tick_price(config: BackendConfig, db: rbatis::Rbatis) -> JoinHandle<()> {
+pub async fn run_tick_price(config: BackendConfig, db: rbatis::RBatis) -> JoinHandle<()> {
     log::info!("Starting tick price!");
     let client = reqwest::Client::new();
     let base_url =  Url::from_str(&config.coingecko_url).unwrap();

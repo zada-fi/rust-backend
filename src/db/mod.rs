@@ -1,4 +1,4 @@
-use rbatis::Rbatis;
+use rbatis::RBatis;
 use crate::db::tables::{Event, PoolInfo, LastSyncBlock, Token, PriceCumulativeLast, EventHash, EventStatData, PairStatInfo, EventInfo, Project, TvlStat, VolumeStat, PairTvlStatInfo, HistoryStatInfo, LaunchpadStatInfo, StoredProjectEvent, StoredLaunchpadStat};
 use num::{ToPrimitive, BigUint};
 use std::collections::HashMap;
@@ -56,7 +56,7 @@ pub fn get_real_amount(decimals: u8,amount: BigDecimal) ->Decimal {
         let real_amount = amount / pow_decimals;
         get_trim_decimals(real_amount)
 }
-pub(crate) async fn upsert_last_sync_block(rb: &mut Rbatis, new_block : i64) -> anyhow::Result<()> {
+pub(crate) async fn upsert_last_sync_block(rb: &mut RBatis, new_block : i64) -> anyhow::Result<()> {
     let block = LastSyncBlock::select_all(rb).await?;
     if block.is_empty() {
         rb.exec("insert into last_sync_block values (?)",
@@ -70,7 +70,7 @@ pub(crate) async fn upsert_last_sync_block(rb: &mut Rbatis, new_block : i64) -> 
     Ok(())
 }
 
-pub async fn get_last_sync_block(rb:&Rbatis,start_block: u64) -> anyhow::Result<u64> {
+pub async fn get_last_sync_block(rb:&RBatis,start_block: u64) -> anyhow::Result<u64> {
     let block: Vec<LastSyncBlock> = rb
         .query_decode("select block_number from last_sync_block",vec![])
         .await?;
@@ -82,7 +82,7 @@ pub async fn get_last_sync_block(rb:&Rbatis,start_block: u64) -> anyhow::Result<
     Ok(number)
 }
 
-pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Result<()> {
+pub(crate) async fn save_events(rb: &RBatis, events: Vec<Event>) -> anyhow::Result<()> {
     let mut tx = rb
         .acquire_begin()
         .await?;
@@ -94,7 +94,7 @@ pub(crate) async fn save_events(rb: &Rbatis, events: Vec<Event>) -> anyhow::Resu
     tx.commit().await?;
     Ok(())
 }
-pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow::Result<(usize,Vec<EventInfo>)> {
+pub(crate) async fn get_events_by_page_number(rb: &RBatis, pg_no:i32) -> anyhow::Result<(usize,Vec<EventInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let events: Vec<EventInfo> = rb
         .query_decode("select e.*,t1.symbol as token_x_symbol,t2.symbol as token_y_symbol, \
@@ -111,14 +111,14 @@ pub(crate) async fn get_events_by_page_number(rb: &Rbatis, pg_no:i32) -> anyhow:
     let pg_count = if events_count % PAGE_SIZE as usize> 0 { quo + 1 } else { quo } ;
     Ok((pg_count,events))
 }
-pub(crate) async fn get_events_without_time(rb: &Rbatis) -> anyhow::Result<Vec<EventHash>> {
+pub(crate) async fn get_events_without_time(rb: &RBatis) -> anyhow::Result<Vec<EventHash>> {
     let events: Vec<EventHash> = rb
         .query_decode("select id,tx_hash,event_type from events where event_time is null order by id asc limit 100",
                       vec![])
         .await?;
     Ok(events)
 }
-pub(crate) async fn get_pools_pre_day_tvl(rb: &Rbatis,day: String) -> anyhow::Result<Vec<PairTvlStatInfo>> {
+pub(crate) async fn get_pools_pre_day_tvl(rb: &RBatis,day: String) -> anyhow::Result<Vec<PairTvlStatInfo>> {
     let date = Date::from_str(&day).unwrap();
     let tvl_stats: Vec<PairTvlStatInfo> = rb
         .query_decode("with tvl_ret as (
@@ -133,7 +133,7 @@ pub(crate) async fn get_pools_pre_day_tvl(rb: &Rbatis,day: String) -> anyhow::Re
 
     Ok(tvl_stats)
 }
-pub(crate) async fn get_pools_day_tvl(rb: &Rbatis,day: String) -> anyhow::Result<Vec<EventStatData>> {
+pub(crate) async fn get_pools_day_tvl(rb: &RBatis,day: String) -> anyhow::Result<Vec<EventStatData>> {
     let pools_tvl_day:Vec<EventStatData> = rb
         .query_decode("select pair_address,to_char(event_time,'YYYY-MM-DD') as day,amount_x,amount_y  \
             from events where id in \
@@ -147,7 +147,7 @@ pub(crate) async fn get_pools_day_tvl(rb: &Rbatis,day: String) -> anyhow::Result
     Ok(pools_tvl_day)
 }
 
-pub(crate) async fn get_pools_day_volume(rb: &Rbatis,day: String) -> anyhow::Result<Vec<EventStatData>> {
+pub(crate) async fn get_pools_day_volume(rb: &RBatis,day: String) -> anyhow::Result<Vec<EventStatData>> {
     let pools_volume_day:Vec<EventStatData> = rb
         .query_decode("select pair_address,to_char(event_time,'YYYY-MM-DD') as day,\
             sum(amount_x) as amount_x,sum(amount_y) as amount_y from events where event_type = 3 \
@@ -159,7 +159,7 @@ pub(crate) async fn get_pools_day_volume(rb: &Rbatis,day: String) -> anyhow::Res
     Ok(pools_volume_day)
 }
 
-pub(crate) async fn save_pool(rb: &mut Rbatis, pool: &PoolInfo) -> anyhow::Result<()> {
+pub(crate) async fn save_pool(rb: &mut RBatis, pool: &PoolInfo) -> anyhow::Result<()> {
     PoolInfo::insert(rb,pool).await?;
     Ok(())
 }
@@ -170,13 +170,13 @@ pub(crate) async fn save_pool(rb: &mut Rbatis, pool: &PoolInfo) -> anyhow::Resul
 //     Ok(())
 // }
 
-pub async fn get_all_store_pools(rb:&Rbatis ) -> anyhow::Result<Vec<PoolInfo>> {
+pub async fn get_all_store_pools(rb:&RBatis ) -> anyhow::Result<Vec<PoolInfo>> {
     let pools: Vec<PoolInfo> = rb
         .query_decode("select * from pool_info",vec![])
         .await?;
     Ok(pools)
 }
-pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<PoolInfo>)> {
+pub async fn get_pools_by_page_number(rb:&RBatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<PoolInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let pools: Vec<PoolInfo> = rb
         .query_decode("select * from pool_info order by id desc offset ? limit ? ",
@@ -211,7 +211,7 @@ pub async fn get_pools_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(
     Ok((pg_count,ret))
 }
 
-pub async fn get_pools_apy(rb: &Rbatis,pools: Vec<String>) ->anyhow::Result<Vec<BigDecimal>> {
+pub async fn get_pools_apy(rb: &RBatis,pools: Vec<String>) ->anyhow::Result<Vec<BigDecimal>> {
     let mut apys = Vec::new();
     for pool in pools {
         let pool_last_volume: Option<VolumeStat> = rb
@@ -241,13 +241,13 @@ pub async fn get_pools_apy(rb: &Rbatis,pools: Vec<String>) ->anyhow::Result<Vec<
     }
     Ok(apys)
 }
-pub async fn get_token(rb:&Rbatis,address: String ) -> anyhow::Result<Option<Token>> {
+pub async fn get_token(rb:&RBatis,address: String ) -> anyhow::Result<Option<Token>> {
     let token: Option<Token> = rb
         .query_decode("select * from tokens where address = ? limit 1",vec![rbs::to_value!(address)])
         .await?;
     Ok(token)
 }
-pub async fn get_token_decimals_in_pool(rb:&Rbatis,pair_address: String ) -> anyhow::Result<(i8,i8)> {
+pub async fn get_token_decimals_in_pool(rb:&RBatis,pair_address: String ) -> anyhow::Result<(i8,i8)> {
     let x_decimals: i8 = rb
         .query_decode("select t.decimals from tokens t,pool_info p where p.pair_address = ? \
         and p.token_x_address = t.address limit 1",vec![rbs::to_value!(pair_address.clone())])
@@ -259,33 +259,33 @@ pub async fn get_token_decimals_in_pool(rb:&Rbatis,pair_address: String ) -> any
     Ok((x_decimals,y_decimals))
 }
 
-pub async fn get_eth_price(rb:&Rbatis) -> anyhow::Result<Decimal> {
+pub async fn get_eth_price(rb:&RBatis) -> anyhow::Result<Decimal> {
     let price: Decimal = rb
         .query_decode("select usd_price from tokens where symbol = 'ETH'",vec![])
         .await?;
     Ok(price)
 }
 
-pub async fn get_token_price(rb:&Rbatis,token_address: String) -> anyhow::Result<Decimal> {
+pub async fn get_token_price(rb:&RBatis,token_address: String) -> anyhow::Result<Decimal> {
     let price: Decimal = rb
         .query_decode("select usd_price from tokens where address = ?",vec![rbs::to_value!(token_address)])
         .await?;
     Ok(price)
 }
 
-pub(crate) async fn save_token(rb: &mut Rbatis, token: Token) -> anyhow::Result<()> {
+pub(crate) async fn save_token(rb: &mut RBatis, token: Token) -> anyhow::Result<()> {
     Token::insert(rb, &token)
         .await?;
     Ok(())
 }
 
-pub async fn get_tokens(rb:&Rbatis) -> anyhow::Result<Vec<Token>> {
+pub async fn get_tokens(rb:&RBatis) -> anyhow::Result<Vec<Token>> {
     let tokens: Vec<Token> = rb
         .query_decode("select * from tokens",vec![])
         .await?;
     Ok(tokens)
 }
-pub(crate) async fn update_events_timestamp(rb: &mut Rbatis, timestamps: Vec<(i64,i32)>) -> anyhow::Result<()> {
+pub(crate) async fn update_events_timestamp(rb: &mut RBatis, timestamps: Vec<(i64,i32)>) -> anyhow::Result<()> {
     for (id,event_time) in timestamps {
         rb.exec("update events set event_time = ? where id = ?",
                 vec![rbs::to_value!(DateTime::from_timestamp(event_time as i64)), rbs::to_value!(id)])
@@ -293,7 +293,7 @@ pub(crate) async fn update_events_timestamp(rb: &mut Rbatis, timestamps: Vec<(i6
     }
     Ok(())
 }
-pub(crate) async fn update_from_of_add_liq_events(rb: &mut Rbatis, from_address: Vec<(i64,String)>) -> anyhow::Result<()> {
+pub(crate) async fn update_from_of_add_liq_events(rb: &mut RBatis, from_address: Vec<(i64,String)>) -> anyhow::Result<()> {
     let mut tx = rb
         .acquire_begin()
         .await?;
@@ -306,7 +306,7 @@ pub(crate) async fn update_from_of_add_liq_events(rb: &mut Rbatis, from_address:
     tx.commit().await?;
     Ok(())
 }
-pub async fn store_pair_events(rb: &mut Rbatis,events: Vec<PairEvent>) -> anyhow::Result<()> {
+pub async fn store_pair_events(rb: &mut RBatis,events: Vec<PairEvent>) -> anyhow::Result<()> {
     let mut added_events_count = HashMap::new();
     let mut last_synced_reserves = HashMap::new();
     let mut db_events = Vec::new();
@@ -368,7 +368,7 @@ pub async fn store_pair_events(rb: &mut Rbatis,events: Vec<PairEvent>) -> anyhow
     Ok(())
 }
 
-pub(crate) async fn save_price_cumulative_last(rb: &mut Rbatis, price: PriceCumulativeLast) -> anyhow::Result<()> {
+pub(crate) async fn save_price_cumulative_last(rb: &mut RBatis, price: PriceCumulativeLast) -> anyhow::Result<()> {
     PriceCumulativeLast::insert(rb, &price)
         .await?;
     Ok(())
@@ -380,14 +380,14 @@ pub(crate) async fn save_price_cumulative_last(rb: &mut Rbatis, price: PriceCumu
 //         .await?;
 //     Ok(tokens)
 // }
-pub(crate) async fn store_price(rb: &mut Rbatis, token_address:String,price: Decimal) -> anyhow::Result<()> {
+pub(crate) async fn store_price(rb: &mut RBatis, token_address:String,price: Decimal) -> anyhow::Result<()> {
     rb.exec("update tokens set usd_price = ? where address = ?",
             vec![rbs::to_value!(price), rbs::to_value!(token_address)])
         .await?;
     Ok(())
 }
 
-pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String, is_vs_usdc: bool,
+pub async fn calculate_price_hour(rb: &RBatis,pair_address: String, is_vs_usdc: bool,
                                   is_vs_token_x:bool, token_x_decimals:i32, token_y_decimals:i32
 ) -> anyhow::Result<Decimal> {
     let wraped_lastest_price: Option<PriceCumulativeLast> = rb
@@ -450,7 +450,7 @@ pub async fn calculate_price_hour(rb: &Rbatis,pair_address: String, is_vs_usdc: 
 
 }
 
-pub(crate) async fn save_day_tvl_stats(rb: &mut Rbatis, stats: Vec<TvlStat>) -> anyhow::Result<()> {
+pub(crate) async fn save_day_tvl_stats(rb: &mut RBatis, stats: Vec<TvlStat>) -> anyhow::Result<()> {
     let mut tx = rb
         .acquire_begin()
         .await?;
@@ -472,7 +472,7 @@ pub(crate) async fn save_day_tvl_stats(rb: &mut Rbatis, stats: Vec<TvlStat>) -> 
     Ok(())
 }
 
-pub(crate) async fn save_day_volume_stats(rb: &mut Rbatis, stats: Vec<VolumeStat>) -> anyhow::Result<()> {
+pub(crate) async fn save_day_volume_stats(rb: &mut RBatis, stats: Vec<VolumeStat>) -> anyhow::Result<()> {
     let mut tx = rb
         .acquire_begin()
         .await?;
@@ -493,7 +493,7 @@ pub(crate) async fn save_day_volume_stats(rb: &mut Rbatis, stats: Vec<VolumeStat
     tx.commit().await?;
     Ok(())
 }
-pub async fn get_unstated_days(rb:&Rbatis,confined_start_date:&String) -> anyhow::Result<Vec<String>> {
+pub async fn get_unstated_days(rb:&RBatis,confined_start_date:&String) -> anyhow::Result<Vec<String>> {
     let tvl_start_date: Option<Date> = rb
         .query_decode("select max(stat_date) from tvl_stats",vec![])
         .await?;
@@ -539,7 +539,7 @@ pub async fn get_unstated_days(rb:&Rbatis,confined_start_date:&String) -> anyhow
     unstated_days.sort_unstable();
     Ok(unstated_days)
 }
-pub async fn get_pool_usd_price(rb:&Rbatis,pair_address: String) -> anyhow::Result<(BigDecimal,bool)> {
+pub async fn get_pool_usd_price(rb:&RBatis,pair_address: String) -> anyhow::Result<(BigDecimal,bool)> {
     //get current token_x/token_y price
     let price_x: Option<Decimal> = rb
         .query_decode("select t.usd_price from tokens t,pool_info p where \
@@ -562,7 +562,7 @@ pub async fn get_pool_usd_price(rb:&Rbatis,pair_address: String) -> anyhow::Resu
     }
     Ok((BigDecimal::from_str(&price.unwrap().0.to_string()).unwrap(),x_price))
 }
-pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow::Result<(usize,Vec<PairStatInfo>)> {
+pub async fn get_pools_stat_info_by_page_number(rb:&RBatis,pg_no:i32) -> anyhow::Result<(usize,Vec<PairStatInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let pools_tvl_stat: Vec<PairTvlStatInfo> = rb
         .query_decode("with tvl_ret as (
@@ -614,21 +614,21 @@ pub async fn get_pools_stat_info_by_page_number(rb:&Rbatis,pg_no:i32) -> anyhow:
     Ok((pg_count,ret))
 }
 
-pub async fn get_all_tvls_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,Decimal)>> {
+pub async fn get_all_tvls_by_day(rb:&RBatis) -> anyhow::Result<Vec<(String,Decimal)>> {
     let all_tvls: Vec<HistoryStatInfo> = rb
         .query_decode("select * from history_stats order by stat_date desc", vec![]).await?;
     let ret = all_tvls.iter().map(|t|
         (t.stat_date.0.to_string(), t.usd_tvl.clone())).collect::<Vec<_>>();
     Ok(ret)
 }
-pub async fn get_all_volumes_by_day(rb:&Rbatis) -> anyhow::Result<Vec<(String,Decimal)>> {
+pub async fn get_all_volumes_by_day(rb:&RBatis) -> anyhow::Result<Vec<(String,Decimal)>> {
     let all_tvls: Vec<HistoryStatInfo> = rb
         .query_decode("select * from history_stats order by stat_date desc", vec![]).await?;
     let ret = all_tvls.iter().map(|t|
         (t.stat_date.0.to_string(), t.usd_volume.clone())).collect::<Vec<_>>();
     Ok(ret)
 }
-pub(crate) async fn save_history_stat(rb: &mut Rbatis, stat: HistoryStatInfo) -> anyhow::Result<()> {
+pub(crate) async fn save_history_stat(rb: &mut RBatis, stat: HistoryStatInfo) -> anyhow::Result<()> {
     rb.exec("insert into history_stats (stat_date,usd_tvl,usd_volume) \
         values (?,?,?) on conflict (stat_date) do update set \
         usd_tvl = ?,usd_volume = ?",
@@ -654,17 +654,17 @@ pub(crate) async fn save_history_stat(rb: &mut Rbatis, stat: HistoryStatInfo) ->
 //     tx.commit().await?;
 //     Ok(())
 // }
-pub(crate) async fn save_project(rb: &mut Rbatis, project: &Project) -> anyhow::Result<()> {
+pub(crate) async fn save_project(rb: &mut RBatis, project: &Project) -> anyhow::Result<()> {
     Project::insert(rb,project).await?;
     Ok(())
 }
-pub async fn get_project_by_name(rb:&Rbatis,project_name: String) -> anyhow::Result<Option<Project>> {
+pub async fn get_project_by_name(rb:&RBatis,project_name: String) -> anyhow::Result<Option<Project>> {
     let project: Option<Project> = rb
         .query_decode("select * from projects where project_name = ?",vec![rbs::to_value!(project_name)])
         .await?;
     Ok(project)
 }
-pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<String>> {
+pub async fn get_project_addresses(rb:&RBatis) -> anyhow::Result<Vec<String>> {
     let db_projects: Option<Vec<HashMap<String, String>>> = rb
         .query_decode("select distinct project_address from projects where project_address != null",vec![])
         .await?;
@@ -677,7 +677,7 @@ pub async fn get_project_addresses(rb:&Rbatis) -> anyhow::Result<Vec<String>> {
     }
     Ok(ret)
 }
-pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<ProjectInfo>)> {
+pub async fn get_projects_by_page_number(rb:&RBatis,pg_no:i32 ) -> anyhow::Result<(usize,Vec<ProjectInfo>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let projects: Vec<Project> = rb
         .query_decode("select * from projects where project_address is not null order by created_time desc offset ? limit ? ",
@@ -738,7 +738,7 @@ pub async fn get_projects_by_page_number(rb:&Rbatis,pg_no:i32 ) -> anyhow::Resul
     };
     Ok((pg_count,ret))
 }
-pub(crate) async fn update_project_addresses(rb: &mut Rbatis, addresses: HashMap<String,String>)
+pub(crate) async fn update_project_addresses(rb: &mut RBatis, addresses: HashMap<String,String>)
                                              -> anyhow::Result<()> {
     // let mut tx = rb
     //     .acquire_begin()
@@ -764,7 +764,7 @@ pub(crate) async fn update_project_addresses(rb: &mut Rbatis, addresses: HashMap
     // tx.commit().await?;
     Ok(())
 }
-pub(crate) async fn save_project_events(rb: &mut Rbatis, events: Vec<StoredProjectEvent>) -> anyhow::Result<()> {
+pub(crate) async fn save_project_events(rb: &mut RBatis, events: Vec<StoredProjectEvent>) -> anyhow::Result<()> {
     let mut tx = rb
         .acquire_begin()
         .await?;
@@ -774,7 +774,7 @@ pub(crate) async fn save_project_events(rb: &mut Rbatis, events: Vec<StoredProje
     tx.commit().await?;
     Ok(())
 }
-pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: String ) -> anyhow::Result<(usize,Vec<ClaimableProject>)> {
+pub async fn get_claimable_tokens_by_page_number(rb:&RBatis,pg_no:i32,addr: String ) -> anyhow::Result<(usize,Vec<ClaimableProject>)> {
     let offset = (pg_no - 1) * PAGE_SIZE;
     let user_invest_projects:Vec<HashMap<String,String>> = rb
         .query_decode("select project_address,sum(op_amount) as invest_amount from project_events  \
@@ -830,25 +830,25 @@ pub async fn get_claimable_tokens_by_page_number(rb:&Rbatis,pg_no:i32,addr: Stri
 
     Ok((pg_count,ret))
 }
-pub(crate) async fn remove_project(rb: &mut Rbatis, project_name: String)
+pub(crate) async fn remove_project(rb: &mut RBatis, project_name: String)
                                              -> anyhow::Result<()> {
     rb.exec("delete from projects where project_name = ?",
             vec![rbs::to_value!(project_name)])
         .await?;
     Ok(())
 }
-pub(crate) async fn save_launchpad_stat_info(rb: &mut Rbatis, info: StoredLaunchpadStat) -> anyhow::Result<()> {
+pub(crate) async fn save_launchpad_stat_info(rb: &mut RBatis, info: StoredLaunchpadStat) -> anyhow::Result<()> {
     StoredLaunchpadStat::insert(rb, &info).await?;
     Ok(())
 }
-pub async fn get_launchpad_stat_info(rb:&Rbatis) -> anyhow::Result<Option<LaunchpadStatInfo>> {
+pub async fn get_launchpad_stat_info(rb:&RBatis) -> anyhow::Result<Option<LaunchpadStatInfo>> {
     let stat_info: Option<LaunchpadStatInfo> = rb
         .query_decode("select total_projects,total_addresses,total_raised from \
         launchpad_stat_info order by stat_time desc limit 1",
                       vec![]).await?;
     Ok(stat_info)
 }
-pub async fn summary_launchpad_stat_info(rb: &mut Rbatis,web3:&Web3<Http>) -> anyhow::Result<()> {
+pub async fn summary_launchpad_stat_info(rb: &mut RBatis,web3:&Web3<Http>) -> anyhow::Result<()> {
     let total_projects: usize = rb
         .query_decode("select count(1) from projects",vec![]).await?;
     let total_addresses: usize = rb
@@ -903,7 +903,7 @@ mod test {
 
     #[tokio::test]
     async fn test_update_decimal() {
-        let rb = Rbatis::new();
+        let rb = RBatis::new();
         let db_url = "postgres://postgres:postgres123@localhost/backend";
         rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
         let pool = rb
@@ -927,7 +927,7 @@ mod test {
 
     #[tokio::test]
     async fn test_update_account() {
-        let rb = Rbatis::new();
+        let rb = RBatis::new();
         let db_url = "postgres://postgres:postgres123@localhost/backend";
         rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
         let pool = rb
@@ -946,7 +946,7 @@ mod test {
 
     #[tokio::test]
     async fn test_update_last_sync_block() {
-        let rb = Rbatis::new();
+        let rb = RBatis::new();
         let db_url = "postgres://postgres:postgres123@localhost/backend";
         rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
         let pool = rb
@@ -976,7 +976,7 @@ mod test {
     //
     #[tokio::test]
     async fn test_calculate_price() {
-        let rb = Rbatis::new();
+        let rb = RBatis::new();
         let db_url = "postgres://postgres:postgres123@localhost/backend";
         rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
         let pool = rb
@@ -992,7 +992,7 @@ mod test {
     }
     #[tokio::test]
     async fn test_get_pools_pre_day_stat() {
-        let mut rb = Rbatis::new();
+        let mut rb = RBatis::new();
         let db_url = "postgres://postgres:postgres123@localhost/backend";
         rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
         let pool = rb
@@ -1013,7 +1013,7 @@ mod test {
 
     #[tokio::test]
     async fn test_update_by_column() {
-        let mut rb = Rbatis::new();
+        let mut rb = RBatis::new();
         let db_url = "postgres://postgres:postgres123@localhost/backend";
         rb.init(rbdc_pg::driver::PgDriver {}, db_url).unwrap();
         let pool = rb
