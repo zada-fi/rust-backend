@@ -63,7 +63,7 @@ CREATE TABLE tvl_stats (
     y_reserves numeric NOT NULL,
     usd_tvl numeric NOT NULL,
     PRIMARY KEY (pair_address,stat_date)
-)
+);
 CREATE TABLE volume_stats (
 --     id serial NOT NULL,
    pair_address text NOT NULL,
@@ -72,13 +72,13 @@ CREATE TABLE volume_stats (
    y_volume numeric NOT NULL,
    usd_volume numeric NOT NULL,
    PRIMARY KEY (pair_address,stat_date)
-)
+);
 CREATE TABLE history_stats (
   stat_date date NOT NULL,
   usd_tvl numeric NOT NULL,
   usd_volume numeric NOT NULL,
   PRIMARY KEY (stat_date)
-)
+);
 -- store launchpad projects
 CREATE TABLE projects (
     project_name text NOT NULL,
@@ -103,7 +103,7 @@ CREATE TABLE projects (
     created_time timestamp NOT NULL default now(),
     last_updated_time timestamp,
     PRIMARY KEY (project_name)
-)
+);
 
 -- -- store launchpad whitelist
 -- CREATE TABLE project_white_lists (
@@ -121,7 +121,7 @@ CREATE TABLE project_events (
     op_user text NOT NULL,
     op_amount numeric NOT NULL,
     op_time timestamp with time zone
-)
+);
 
 -- store launchpad stat info
 CREATE TABLE launchpad_stat_info (
@@ -130,4 +130,9 @@ CREATE TABLE launchpad_stat_info (
     total_addresses integer NOT NULL,
     total_raised numeric NOT NULL,
     primary key (stat_time)
-)
+);
+
+
+
+
+

@@ -105,8 +105,10 @@ pub(crate) async fn get_events_by_page_number(rb: &RBatis, pg_no:i32) -> anyhow:
         order by e.event_time desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
-    let events_count: usize = rb
-        .query_decode("select count(1) from events where event_type != 4 and event_time is not null",vec![]).await?;
+    let events_count_ret: HashMap<String,usize> = rb
+        .query_decode("select count(1) from events where event_type != 4 and event_time is not null",vec![])
+        .await?;
+    let events_count = events_count_ret.get("count").map(|c| *c).unwrap_or_default();
     let quo = events_count / PAGE_SIZE as usize;
     let pg_count = if events_count % PAGE_SIZE as usize> 0 { quo + 1 } else { quo } ;
     Ok((pg_count,events))
@@ -182,8 +184,9 @@ pub async fn get_pools_by_page_number(rb:&RBatis,pg_no:i32 ) -> anyhow::Result<(
         .query_decode("select * from pool_info order by id desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
-    let pools_count: usize = rb
+    let pools_count_ret: HashMap<String,usize> = rb
         .query_decode("select count(1) from pool_info",vec![]).await?;
+    let pools_count = pools_count_ret.get("count").map(|c| *c).unwrap_or_default();
     let quo = pools_count / PAGE_SIZE as usize;
     let pg_count = if pools_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
     let mut token_decimals = HashMap::new();
@@ -683,8 +686,9 @@ pub async fn get_projects_by_page_number(rb:&RBatis,pg_no:i32 ) -> anyhow::Resul
         .query_decode("select * from projects where project_address is not null order by created_time desc offset ? limit ? ",
                       vec![rbs::to_value!(offset),rbs::to_value!(PAGE_SIZE)])
         .await?;
-    let projects_count: usize = rb
+    let projects_count_ret: HashMap<String,usize> = rb
         .query_decode("select count(1) from projects where project_address is not null",vec![]).await?;
+    let projects_count = projects_count_ret.get("count").map(|c| *c).unwrap_or_default();
     let quo = projects_count / PAGE_SIZE as usize;
     let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
 
@@ -823,8 +827,9 @@ pub async fn get_claimable_tokens_by_page_number(rb:&RBatis,pg_no:i32,addr: Stri
         ret.push(claimable_project);
 
     }
-    let projects_count: usize = rb
+    let projects_count_ret: HashMap<String,usize> = rb
         .query_decode("select count(1) from project_events where op_user = ? and op_type = 1",vec![rbs::to_value!(addr)]).await?;
+    let projects_count = projects_count_ret.get("count").map(|c| *c).unwrap_or_default();
     let quo = projects_count / PAGE_SIZE as usize;
     let pg_count = if projects_count % PAGE_SIZE as usize > 0 { quo + 1 } else { quo } ;
 
@@ -849,12 +854,14 @@ pub async fn get_launchpad_stat_info(rb:&RBatis) -> anyhow::Result<Option<Launch
     Ok(stat_info)
 }
 pub async fn summary_launchpad_stat_info(rb: &mut RBatis,web3:&Web3<Http>) -> anyhow::Result<()> {
-    let total_projects: usize = rb
+    let total_projects_ret: HashMap<String,usize> = rb
         .query_decode("select count(1) from projects",vec![]).await?;
-    let total_addresses: usize = rb
+    let total_projects = total_projects_ret.get("count").map(|c| *c).unwrap_or_default();
+    let total_addresses_ret: HashMap<String,usize> = rb
         .query_decode("select count(distinct op_user) from project_events",
                       vec![])
         .await?;
+    let total_addresses = total_addresses_ret.get("count").map(|c|*c).unwrap_or_default();
     log::info!("{:?} {:?}",total_projects,total_addresses);
     let invest_amounts: Vec<HashMap<String,String>> = rb
         .query_decode("select p.receive_token,sum(coalesce(e.op_amount,0)) as total_amount from \
